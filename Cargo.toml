@@ -1,0 +1,59 @@
+[package]
+name         = "mirror"
+version      = "0.1.0"
+edition      = "2024"
+rust-version = "1.89"
+license      = "MIT OR Apache-2.0"
+repository   = "https://github.com/LiGoldragon/mirror"
+description  = "Payload-blind append-ingest mirror daemon: the sema version-control remote."
+
+[lib]
+name = "mirror"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mirror"
+path = "src/bin/mirror.rs"
+required-features = ["nota-text"]
+
+[[bin]]
+name = "meta-mirror"
+path = "src/bin/meta_mirror.rs"
+required-features = ["nota-text"]
+
+[[bin]]
+name = "mirror-daemon"
+path = "src/bin/mirror_daemon.rs"
+
+[[bin]]
+name = "mirror-write-configuration"
+path = "src/bin/mirror_write_configuration.rs"
+required-features = ["nota-text"]
+
+[features]
+default = ["nota-text"]
+# nota-text enables the NOTA text codec on the generated runtime nouns and the
+# CLI text edges. The generated schema modules gate their NOTA surface on it.
+nota-text = ["signal-mirror/nota-text", "meta-signal-mirror/nota-text"]
+
+[dependencies]
+meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", branch = "main" }
+nota-next          = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "structural-shape-extension" }
+rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
+sema-engine        = { git = "https://github.com/LiGoldragon/sema-engine.git", branch = "versioned-fold" }
+signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main" }
+signal-mirror      = { git = "https://github.com/LiGoldragon/signal-mirror.git", branch = "main" }
+thiserror          = "2"
+tokio              = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+triad-runtime      = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "tailnet-listener" }
+
+[build-dependencies]
+schema-rust-next = { git = "https://github.com/LiGoldragon/schema-rust-next.git", branch = "record-family-emission" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+unused      = { level = "warn", priority = -1 }
+dead_code   = "warn"

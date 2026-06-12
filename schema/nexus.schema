@@ -1,0 +1,52 @@
+;; mirror Nexus plane schema — daemon-owned.
+;;
+;; The feature catalog of the mirror engine. The load-bearing internal
+;; features — EXPECTED-HEAD VALIDATION, IDEMPOTENT DEDUP BY ENTRY
+;; DIGEST, and GAP/FORK REJECTION — are the AppendDecision and
+;; CheckpointDecision objects below: SEMA loads the ledger state for a
+;; pending request (CheckedAppend / CheckedCheckpoint), the Nexus
+;; decision projects it into a typed decision, and the runner either
+;; persists the accepted remainder, acknowledges a duplicate without
+;; rewriting, or replies with the typed rejection.
+;;
+;; The working Input/Output roots live in the dependency contract
+;; signal-mirror; this plane imports them (single source of the wire
+;; types).
+
+{
+  OrdinaryInput signal-mirror:lib:Input
+  OrdinaryOutput signal-mirror:lib:Output
+  AppendReceipt signal-mirror:lib:AppendReceipt
+  AppendRejection signal-mirror:lib:AppendRejection
+  CheckpointArtifact signal-mirror:lib:CheckpointArtifact
+  CheckpointReceipt signal-mirror:lib:CheckpointReceipt
+  PublishRejection signal-mirror:lib:PublishRejection
+  SemaWriteInput mirror:sema:WriteInput
+  SemaWriteOutput mirror:sema:WriteOutput
+  SemaReadInput mirror:sema:ReadInput
+  SemaReadOutput mirror:sema:ReadOutput
+  NovelSuffix mirror:sema:NovelSuffix
+}
+[SignalArrived SemaWriteCompleted SemaReadCompleted]
+[ReplyToSignal CommandSemaWrite CommandSemaRead Continue]
+{
+  SignalArrived OrdinaryInput
+  SemaWriteCompleted SemaWriteOutput
+  SemaReadCompleted SemaReadOutput
+
+  ReplyToSignal OrdinaryOutput
+  CommandSemaWrite SemaWriteInput
+  CommandSemaRead SemaReadInput
+  Continue NexusWork
+
+  NexusWork [(SignalArrived) (SemaWriteCompleted) (SemaReadCompleted)]
+  NexusAction [(ReplyToSignal) (CommandSemaWrite) (CommandSemaRead) (Continue)]
+
+  ;; The append decision: expected-head validation, idempotent dedup by
+  ;; entry digest, and gap/fork rejection, computed from CheckedAppend.
+  AppendDecision [(AcceptSuffix NovelSuffix) (AcknowledgeDuplicate AppendReceipt) (RefuseAppend AppendRejection)]
+
+  ;; The checkpoint decision: registration and coverage-monotonicity
+  ;; validation, with idempotent re-publish acknowledgement.
+  CheckpointDecision [(AcceptCheckpoint CheckpointArtifact) (AcknowledgeCheckpoint CheckpointReceipt) (RefuseCheckpoint PublishRejection)]
+}

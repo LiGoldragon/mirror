@@ -1,0 +1,95 @@
+;; mirror SEMA plane schema — daemon-owned.
+;;
+;; The mirror's own durable state is itself a sema-engine VERSIONED
+;; store (Spirit 0yx5: dogfooding — the version-control remote's ledger
+;; is version-controlled by the same mechanism it serves). The declared
+;; record families below emit the generated `RecordFamily` surface:
+;; pinned per-family schema hashes, sema-engine table descriptors, and
+;; the component VersioningPolicy whose store name is the schema
+;; identity component (`mirror`).
+;;
+;; Stored rows are SELF-CONTAINED local declarations: the mirror's
+;; durable shape must not move when the wire contract churns. Wire
+;; nouns are imported only for the plane Input/Output payloads.
+;;
+;; RetentionSetting is the typed retention placeholder: persisted as
+;; policy state, NOT enforced in this cut (deferred by decision; see
+;; INTENT.md).
+
+{
+  StoreName signal-mirror:lib:StoreName
+  CommitSequence signal-mirror:lib:CommitSequence
+  EntryDigest signal-mirror:lib:EntryDigest
+  HeadMark signal-mirror:lib:HeadMark
+  EntryEnvelope signal-mirror:lib:EntryEnvelope
+  EntrySuffix signal-mirror:lib:EntrySuffix
+  CheckpointArtifact signal-mirror:lib:CheckpointArtifact
+  AppendReceipt signal-mirror:lib:AppendReceipt
+  CheckpointReceipt signal-mirror:lib:CheckpointReceipt
+  RestoreQuery signal-mirror:lib:RestoreQuery
+  RestoreBundle signal-mirror:lib:RestoreBundle
+  RestoreRejection signal-mirror:lib:RestoreRejection
+  HeadQuery signal-mirror:lib:HeadQuery
+  HeadListing signal-mirror:lib:HeadListing
+  StoreRegistration meta-signal-mirror:lib:StoreRegistration
+  RegistrationReceipt meta-signal-mirror:lib:RegistrationReceipt
+  StoreRetirement meta-signal-mirror:lib:StoreRetirement
+  RetirementReceipt meta-signal-mirror:lib:RetirementReceipt
+  RetentionOrder meta-signal-mirror:lib:RetentionOrder
+  RetentionReceipt meta-signal-mirror:lib:RetentionReceipt
+  RegistryQuery meta-signal-mirror:lib:RegistryQuery
+  RegistryListing meta-signal-mirror:lib:RegistryListing
+}
+[WriteInput ReadInput]
+[WriteOutput ReadOutput]
+{
+  WriteInput [(PersistSuffix NovelSuffix) (PersistCheckpoint CheckpointArtifact) (RegisterStore StoreRegistration) (RetireStore StoreRetirement) (PersistRetention RetentionOrder)]
+  ReadInput [(CheckAppend EntrySuffix) (CheckCheckpoint CheckpointArtifact) (LoadRestore RestoreQuery) (LoadHeads HeadQuery) (LoadRegistry RegistryQuery)]
+  WriteOutput [(SuffixPersisted AppendReceipt) (CheckpointPersisted CheckpointReceipt) (StoreRegistered RegistrationReceipt) (StoreRetired RetirementReceipt) (RetentionPersisted RetentionReceipt) (WriteFaulted LedgerFault)]
+  ReadOutput [(AppendChecked CheckedAppend) (CheckpointChecked CheckedCheckpoint) (RestoreLoaded RestoreBundle) (RestoreRefused RestoreRejection) (HeadsLoaded HeadListing) (RegistryLoaded RegistryListing) (ReadFaulted LedgerFault)]
+
+  ;; The validated novel subset of an append, decided by Nexus: entries
+  ;; the ledger does not hold yet, plus the head the store advances to.
+  NovelSuffix { store StoreName head HeadMark entries (Vec EntryEnvelope) }
+
+  ;; Check-results: SEMA looks up ledger state for a pending request;
+  ;; the decision happens in the Nexus plane (schema/nexus.schema).
+  KnownEntry { sequence CommitSequence digest EntryDigest }
+  RegisteredLedger {
+    head (Optional HeadMark)
+    known (Vec KnownEntry)
+    latest_checkpoint (Optional CheckpointReceipt)
+  }
+  StoreLedger [(Registered RegisteredLedger) Unregistered]
+  CheckedAppend { request EntrySuffix ledger StoreLedger }
+  CheckedCheckpoint { artifact CheckpointArtifact ledger StoreLedger }
+
+  LedgerFault { detail String }
+
+  ;; Stored rows — the mirror's own versioned record families.
+  DigestBytes (Bytes 32)
+  HeadStamp { sequence Integer digest DigestBytes }
+  StoredHead { store String head (Optional HeadStamp) }
+  ReceivedEntry {
+    store String
+    sequence Integer
+    previous_digest (Optional DigestBytes)
+    digest DigestBytes
+    payload Bytes
+  }
+  StoredCheckpoint {
+    store String
+    sequence Integer
+    covered_end Integer
+    digest DigestBytes
+    artifact Bytes
+  }
+  KeepCount Integer
+  RetentionRule [KeepEverything (KeepLatestCheckpoints KeepCount)]
+  RetentionSetting { scope (Optional String) rule RetentionRule }
+
+  HeadFamily (Family { record StoredHead table store-heads key Domain })
+  EntryFamily (Family { record ReceivedEntry table received-entries key Domain })
+  CheckpointFamily (Family { record StoredCheckpoint table checkpoint-artifacts key Domain })
+  RetentionFamily (Family { record RetentionSetting table retention-rules key Domain })
+}
