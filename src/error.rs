@@ -3,10 +3,24 @@
 use thiserror::Error;
 use triad_runtime::{AsyncListenerError, EngineRequestError, FrameError};
 
+use crate::config::ConfigurationError;
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("missing NOTA request argument")]
+    MissingArgument,
+
+    #[error("NOTA request decode: {0}")]
+    NotaDecode(#[from] nota_next::NotaDecodeError),
+
+    #[error("socket environment variable {variable} is not set")]
+    SocketVariableUnset { variable: String },
+
+    #[error("configuration: {0}")]
+    Configuration(#[from] ConfigurationError),
 
     #[error("triad frame: {0}")]
     Frame(#[from] FrameError),
@@ -25,9 +39,6 @@ pub enum Error {
 
     #[error("tailnet listener: {0}")]
     TailnetListener(#[from] AsyncListenerError),
-
-    #[error("tailnet listen address is not a socket address: {address}")]
-    TailnetAddressInvalid { address: String },
 
     #[error("meta request read timed out")]
     MetaRequestReadTimedOut,

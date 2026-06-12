@@ -144,6 +144,13 @@ impl ReceivedEntry {
             digest: self.digest.to_entry_digest(),
         }
     }
+
+    pub fn to_head_stamp(&self) -> HeadStamp {
+        HeadStamp {
+            sequence: self.sequence,
+            digest: self.digest.clone(),
+        }
+    }
 }
 
 impl StoredCheckpoint {
@@ -323,15 +330,35 @@ impl Store {
     /// Persist a validated novel suffix: every entry row in one commit,
     /// then the advanced head row. Both transactions are durable at
     /// return; the ack is sent only after both committed. A crash
-    /// between the two leaves entry rows ahead of the head row — the
-    /// shipper's idempotent re-send dedups the rows and re-advances the
-    /// head (see ARCHITECTURE.md).
+    /// between the two leaves entry rows ahead of the head row; the
+    /// shipper's idempotent re-send dedups against the loaded known
+    /// rows and arrives here with an EMPTY entry remainder, so the
+    /// entry transaction is skipped (sema-engine rejects empty commits)
+    /// and only the head re-advances (see ARCHITECTURE.md).
     pub fn persist_suffix(&mut self, suffix: &NovelSuffix) -> Result<AppendReceipt> {
+        if !suffix.entries.is_empty() {
+            self.commit_entry_rows(suffix)?;
+        }
+        self.advance_head(suffix)
+    }
+
+    /// The first of the two suffix transactions: every novel entry row
+    /// in one commit. Public as the crash-window seam — the witness
+    /// proving the window self-heals commits the rows without the head
+    /// advance, exactly the state a crash between the transactions
+    /// leaves behind.
+    pub fn commit_entry_rows(&mut self, suffix: &NovelSuffix) -> Result<()> {
         let mut commit = CommitRequest::new(self.entries);
         for envelope in &suffix.entries {
             commit = commit.assert(ReceivedEntry::from_envelope(&suffix.store, envelope));
         }
         self.engine.commit(commit)?;
+        Ok(())
+    }
+
+    /// The second of the two suffix transactions: mutate the head row
+    /// to the suffix's decided head.
+    pub fn advance_head(&mut self, suffix: &NovelSuffix) -> Result<AppendReceipt> {
         self.engine.mutate(Mutation::new(
             self.heads,
             StoredHead {
@@ -356,15 +383,31 @@ impl Store {
         Ok(receipt)
     }
 
-    /// Register a store name: the head row exists with no head yet.
-    /// Registering an already-registered store is reported by the caller
-    /// through the ledger check, not here.
+    /// Whether a store name fits the key scheme: entry and checkpoint
+    /// keys are `<store>/<sequence>`, so a name carrying the separator
+    /// would collide with the ordering suffix. Registration refuses
+    /// such names with a typed rejection.
+    pub fn name_is_keyable(store: &StoreName) -> bool {
+        !store.as_str().contains(KEY_SEPARATOR)
+    }
+
+    /// Register a store name. A virgin name starts with no head. A name
+    /// with surviving history rows (retired earlier — retirement keeps
+    /// the received entries until retention enforcement lands) RESUMES:
+    /// the head restores from the highest surviving entry row, so a
+    /// shipper continues the chain instead of faulting on re-asserted
+    /// rows. Registering an already-registered store is reported by the
+    /// caller through the registry check, not here.
     pub fn register_store(&mut self, store: &StoreName) -> Result<()> {
+        let surviving = self.entry_rows(KeyRange::between(
+            Self::sequence_key(store, 0),
+            Self::sequence_key(store, u64::MAX),
+        ))?;
         self.engine.assert(Assertion::new(
             self.heads,
             StoredHead {
                 store: store.as_str().to_owned(),
-                head: None,
+                head: surviving.last().map(ReceivedEntry::to_head_stamp),
             },
         ))?;
         Ok(())
@@ -372,7 +415,7 @@ impl Store {
 
     /// Retire a store name: retract the head row. Received entries and
     /// checkpoint artifacts remain until retention enforcement lands
-    /// (deferred by decision).
+    /// (deferred by decision); re-registration resumes from them.
     pub fn retire_store(&mut self, store: &StoreName) -> Result<()> {
         self.engine.retract(Retraction::new(
             self.heads,
@@ -464,11 +507,6 @@ impl Store {
                 })
                 .collect(),
         ))
-    }
-
-    /// Whether a store name is registered (has a head row).
-    pub fn is_registered(&self, store: &StoreName) -> Result<bool> {
-        Ok(self.head_row(store)?.is_some())
     }
 
     /// The mirror's own versioned engine — exposed for inspection in

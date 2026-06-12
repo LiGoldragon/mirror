@@ -13,8 +13,6 @@ use meta_signal_mirror::{ConfigurationArchiveError, MirrorDaemonConfiguration};
 use thiserror::Error;
 use triad_runtime::{BindingSurface, SocketMode};
 
-use crate::error::Error;
-
 /// The daemon-local configuration: the decoded contract record plus the
 /// parsed tailnet socket address.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,17 +94,4 @@ pub enum ConfigurationError {
 
     #[error("tcp listen address is not a socket address: {address}")]
     ListenAddressInvalid { address: String },
-}
-
-impl From<ConfigurationError> for Error {
-    fn from(error: ConfigurationError) -> Self {
-        match error {
-            ConfigurationError::Archive(archive) => {
-                Error::Io(std::io::Error::other(archive.to_string()))
-            }
-            ConfigurationError::ListenAddressInvalid { address } => {
-                Error::TailnetAddressInvalid { address }
-            }
-        }
-    }
 }

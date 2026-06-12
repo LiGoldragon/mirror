@@ -10,8 +10,11 @@
 //! the persisting redb transaction committed — ack after durable write.
 //!
 //! The meta tier (owner-only Unix socket) drives the same single-writer
-//! SEMA plane directly: registration, retirement, retention, and the
-//! configuration echo never ride the working signal.
+//! SEMA plane through the DECLARED plane verbs (`schema/sema.schema`):
+//! the registry read backs the pre-checks, and registration,
+//! retirement, and retention are SEMA writes — the schema is the one
+//! source of truth for every plane operation. Meta orders never ride
+//! the working signal.
 
 use meta_signal_mirror::{
     ConfigurationReceipt, OrderRejection, OrderRejectionReason, RejectionDetail,
@@ -93,35 +96,48 @@ impl MirrorEngine {
         store: meta_signal_mirror::StoreName,
     ) -> meta_signal_mirror::Output {
         let working_name = signal_mirror::StoreName::new(store.as_str().to_owned());
-        match self.store.is_registered(&working_name) {
-            Ok(true) => Self::meta_rejection(
+        if !Store::name_is_keyable(&working_name) {
+            return Self::meta_rejection(
+                OrderRejectionReason::StoreNameInvalid,
+                "store name carries the key separator '/'",
+            );
+        }
+        let listing = match self.load_registered() {
+            Ok(listing) => listing,
+            Err(rejection) => return rejection,
+        };
+        if Self::registry_holds(&listing, &store) {
+            return Self::meta_rejection(
                 OrderRejectionReason::StoreAlreadyRegistered,
                 "store is already registered",
-            ),
-            Ok(false) => match self.store.register_store(&working_name) {
-                Ok(()) => meta_signal_mirror::Output::StoreRegistered(
-                    meta_signal_mirror::RegistrationReceipt::new(store),
-                ),
-                Err(error) => Self::meta_fault(error),
-            },
-            Err(error) => Self::meta_fault(error),
+            );
+        }
+        match self.apply_meta(WriteInput::RegisterStore(
+            meta_signal_mirror::StoreRegistration::new(store),
+        )) {
+            WriteOutput::StoreRegistered(receipt) => {
+                meta_signal_mirror::Output::StoreRegistered(receipt)
+            }
+            other => Self::meta_write_unexpected(other),
         }
     }
 
     fn retire_store(&mut self, store: meta_signal_mirror::StoreName) -> meta_signal_mirror::Output {
-        let working_name = signal_mirror::StoreName::new(store.as_str().to_owned());
-        match self.store.is_registered(&working_name) {
-            Ok(false) => Self::meta_rejection(
+        let listing = match self.load_registered() {
+            Ok(listing) => listing,
+            Err(rejection) => return rejection,
+        };
+        if !Self::registry_holds(&listing, &store) {
+            return Self::meta_rejection(
                 OrderRejectionReason::StoreUnknown,
                 "store is not registered",
-            ),
-            Ok(true) => match self.store.retire_store(&working_name) {
-                Ok(()) => meta_signal_mirror::Output::StoreRetired(
-                    meta_signal_mirror::RetirementReceipt::new(store),
-                ),
-                Err(error) => Self::meta_fault(error),
-            },
-            Err(error) => Self::meta_fault(error),
+            );
+        }
+        match self.apply_meta(WriteInput::RetireStore(
+            meta_signal_mirror::StoreRetirement::new(store),
+        )) {
+            WriteOutput::StoreRetired(receipt) => meta_signal_mirror::Output::StoreRetired(receipt),
+            other => Self::meta_write_unexpected(other),
         }
     }
 
@@ -129,21 +145,73 @@ impl MirrorEngine {
         &mut self,
         order: meta_signal_mirror::RetentionOrder,
     ) -> meta_signal_mirror::Output {
-        match self.store.persist_retention(&order) {
-            Ok(()) => {
-                meta_signal_mirror::Output::RetentionSet(meta_signal_mirror::RetentionReceipt {
-                    scope: order.scope,
-                    rule: order.rule,
-                })
+        match self.apply_meta(WriteInput::PersistRetention(order)) {
+            WriteOutput::RetentionPersisted(receipt) => {
+                meta_signal_mirror::Output::RetentionSet(receipt)
             }
-            Err(error) => Self::meta_fault(error),
+            other => Self::meta_write_unexpected(other),
         }
     }
 
     fn observe_registry(&self) -> meta_signal_mirror::Output {
-        match self.store.load_registry() {
+        match self.load_registered() {
             Ok(listing) => meta_signal_mirror::Output::RegistryObserved(listing),
-            Err(error) => Self::meta_fault(error),
+            Err(rejection) => rejection,
+        }
+    }
+
+    /// One meta write through the declared SEMA write plane.
+    fn apply_meta(&mut self, input: WriteInput) -> WriteOutput {
+        self.apply(sema_schema::sema::Sema::new(
+            Self::meta_origin_route(),
+            input,
+        ))
+        .into_root()
+    }
+
+    /// The registered-store listing through the declared SEMA read
+    /// plane; a fault projects into the typed meta rejection.
+    fn load_registered(
+        &self,
+    ) -> std::result::Result<meta_signal_mirror::RegistryListing, meta_signal_mirror::Output> {
+        let output = self
+            .observe(sema_schema::sema::Sema::new(
+                Self::meta_origin_route(),
+                ReadInput::LoadRegistry(meta_signal_mirror::RegistryQuery {}),
+            ))
+            .into_root();
+        match output {
+            ReadOutput::RegistryLoaded(listing) => Ok(listing),
+            ReadOutput::ReadFaulted(fault) => Err(Self::meta_rejection(
+                OrderRejectionReason::LedgerFault,
+                fault.payload(),
+            )),
+            other => Err(Self::meta_rejection(
+                OrderRejectionReason::LedgerFault,
+                &format!("registry read returned an unexpected output: {other:?}"),
+            )),
+        }
+    }
+
+    fn registry_holds(
+        listing: &meta_signal_mirror::RegistryListing,
+        store: &meta_signal_mirror::StoreName,
+    ) -> bool {
+        listing
+            .payload()
+            .iter()
+            .any(|registered| registered.payload() == store)
+    }
+
+    fn meta_write_unexpected(output: WriteOutput) -> meta_signal_mirror::Output {
+        match output {
+            WriteOutput::WriteFaulted(fault) => {
+                Self::meta_rejection(OrderRejectionReason::LedgerFault, fault.payload())
+            }
+            other => Self::meta_rejection(
+                OrderRejectionReason::LedgerFault,
+                &format!("meta write returned an unexpected output: {other:?}"),
+            ),
         }
     }
 
@@ -154,8 +222,12 @@ impl MirrorEngine {
         })
     }
 
-    fn meta_fault(error: crate::error::Error) -> meta_signal_mirror::Output {
-        Self::meta_rejection(OrderRejectionReason::LedgerFault, &error.to_string())
+    /// The origin route stamped onto meta-borne SEMA traffic, distinct
+    /// from the working route so traces tell the planes apart. Meta
+    /// orders are served one per ask on the engine actor's own call
+    /// stack, so there is no concurrent in-flight mail to disambiguate.
+    fn meta_origin_route() -> sema_schema::OriginRoute {
+        sema_schema::OriginRoute::new(2)
     }
 
     /// The decision for an arrived working `Input`: every state-touching

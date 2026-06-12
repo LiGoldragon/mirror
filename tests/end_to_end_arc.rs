@@ -458,14 +458,12 @@ async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically
         other => panic!("expected idempotent Appended, got {other:?}"),
     }
 
-    // The mirror carried the TCP peers as typed PeerIdentity::Tcp.
-    let peers = link.observed_tcp_peers().await.expect("observed peers");
-    assert!(!peers.is_empty());
-    assert!(
-        peers
-            .iter()
-            .all(|peer| matches!(peer, PeerIdentity::Tcp(_)))
-    );
+    // The mirror carried the TCP peers as typed PeerIdentity::Tcp —
+    // observed through the bounded witness (a count plus the most
+    // recent peer; no unbounded production peer list).
+    let witness = link.tcp_peer_witness().await.expect("peer witness");
+    assert!(witness.served_request_count() >= 1);
+    assert!(matches!(witness.last_peer(), Some(PeerIdentity::Tcp(_))));
 
     // RESTORE: a fresh component store imports checkpoint + suffix
     // fetched from the mirror.

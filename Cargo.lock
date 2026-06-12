@@ -369,7 +369,7 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 [[package]]
 name = "meta-signal-mirror"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=main#fa96dc37374829e1b52270c2ec7c8f64667e44d0"
+source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=main#674f24d2b61d8680c902aeee442d335ad817e050"
 dependencies = [
  "nota-next 0.4.0 (git+https://github.com/LiGoldragon/nota-next.git?branch=structural-shape-extension)",
  "rkyv",
@@ -738,13 +738,12 @@ dependencies = [
 [[package]]
 name = "signal-mirror"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-mirror.git?branch=main#d06dd7bd47dff62aade6347021f2ab8eaee1310a"
+source = "git+https://github.com/LiGoldragon/signal-mirror.git?branch=main#4fa767d795f0b7c22bcdbf834f816926c18f807f"
 dependencies = [
  "nota-next 0.4.0 (git+https://github.com/LiGoldragon/nota-next.git?branch=structural-shape-extension)",
  "rkyv",
  "schema-rust-next",
  "signal-frame",
- "thiserror",
 ]
 
 [[package]]

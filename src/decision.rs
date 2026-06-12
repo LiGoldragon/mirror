@@ -3,8 +3,9 @@
 //!
 //! `CheckedAppend::into_decision` is the engine's load-bearing internal
 //! feature (declared in `schema/nexus.schema` as `AppendDecision`):
-//! expected-head validation, idempotent dedup by entry digest, and
-//! gap/fork rejection. `CheckedCheckpoint::into_decision` validates
+//! expected-head validation, idempotent dedup by entry digest against
+//! the LOADED KNOWN ROWS (including crash-window rows above the head),
+//! and gap/fork rejection. `CheckedCheckpoint::into_decision` validates
 //! registration and coverage monotonicity. Both are pure projections
 //! from looked-up ledger state to a typed decision — no storage access
 //! here; the single-writer engine actor makes read-decide-write atomic.
@@ -54,20 +55,40 @@ impl CheckedAppend {
         {
             return refuse(reason, request.store, ledger.head);
         }
-        if let Some(reason) = ledger.duplicate_divergence(&request.entries) {
+        if let Some(reason) = ledger.known_divergence(&request.entries) {
             return refuse(reason, request.store, ledger.head);
         }
-        let head_sequence = ledger.head_sequence();
+        let Some(suffix_end) = request.entries.last().map(|entry| HeadMark {
+            sequence: entry.sequence.clone(),
+            digest: entry.digest.clone(),
+        }) else {
+            // Unreachable: the empty suffix was refused above.
+            return refuse(
+                AppendRejectionReason::EmptySuffix,
+                request.store,
+                ledger.head,
+            );
+        };
+        // The novel remainder is computed against the LOADED KNOWN ROWS,
+        // never the head sequence: a crash between the entry transaction
+        // and the head advance leaves rows ABOVE the head, and the
+        // shipper's re-send must dedup against them (digest-verified by
+        // known_divergence above) instead of re-asserting and faulting.
         let novel: Vec<EntryEnvelope> = request
             .entries
             .into_iter()
-            .filter(|entry| entry.sequence.clone().into_u64() > head_sequence)
+            .filter(|entry| {
+                ledger
+                    .known_digest(entry.sequence.clone().into_u64())
+                    .is_none()
+            })
             .collect();
-        let Some(last) = novel.last() else {
-            // Every entry already stored with matching digests: the
-            // idempotent acknowledgement — same head, no rewrite. A
-            // headless ledger cannot hold re-sent entries; refuse
-            // rather than panic if the state is inconsistent.
+        if novel.is_empty() && suffix_end.sequence.clone().into_u64() <= ledger.head_sequence() {
+            // Every entry already stored at or below the head with
+            // matching digests: the idempotent acknowledgement — same
+            // head, no rewrite. A headless ledger cannot hold such a
+            // re-send; refuse rather than panic if the state is
+            // inconsistent.
             let Some(head) = ledger.head else {
                 return refuse(AppendRejectionReason::SequenceGap, request.store, None);
             };
@@ -75,17 +96,14 @@ impl CheckedAppend {
                 store: request.store,
                 head,
             });
-        };
-        if let Some(reason) = ledger.boundary_violation(&novel) {
-            return refuse(reason, request.store, ledger.head);
         }
-        let head = HeadMark {
-            sequence: last.sequence.clone(),
-            digest: last.digest.clone(),
-        };
+        // A nonempty remainder persists and advances the head. An EMPTY
+        // remainder whose suffix end lies above the head is the healed
+        // crash window: a head-only re-advance (`Store::persist_suffix`
+        // skips the empty entry transaction).
         AppendDecision::AcceptSuffix(NovelSuffix {
             store: request.store,
-            head,
+            head: suffix_end,
             entries: novel,
         })
     }
@@ -144,11 +162,12 @@ impl RegisteredLedger {
                 if first.previous_digest.as_ref() != Some(&mark.digest) {
                     return Some(AppendRejectionReason::DigestMismatch);
                 }
-                if mark_sequence > self.head_sequence() {
-                    // The shipper believes the mirror holds history it
-                    // does not have yet.
-                    return Some(AppendRejectionReason::SequenceGap);
-                }
+                // The mark must name a STORED row — the loaded known
+                // rows, not the head: after a crash between the entry
+                // transaction and the head advance, the row the shipper
+                // continues from may sit above the head. A missing row
+                // means the shipper believes the mirror holds history
+                // it does not have yet.
                 match self.known_digest(mark_sequence) {
                     Some(known) if known.digest == mark.digest => {}
                     Some(_) => return Some(AppendRejectionReason::HeadForked),
@@ -159,45 +178,22 @@ impl RegisteredLedger {
         None
     }
 
-    /// Re-sent entries at or below the head must match the stored
-    /// digests exactly — a divergent re-send is a fork, never a rewrite.
-    fn duplicate_divergence(&self, entries: &[EntryEnvelope]) -> Option<AppendRejectionReason> {
+    /// Entries the ledger already holds — at or below the head, or in
+    /// the crash window above it — must match the stored digests
+    /// exactly: a divergent re-send is a fork, never a rewrite. An
+    /// entry at or below the head with no stored row is a hole the
+    /// shipper cannot fill; reject it as a gap.
+    fn known_divergence(&self, entries: &[EntryEnvelope]) -> Option<AppendRejectionReason> {
         let head_sequence = self.head_sequence();
         for entry in entries {
             let sequence = entry.sequence.clone().into_u64();
-            if sequence > head_sequence {
-                break;
-            }
             match self.known_digest(sequence) {
                 Some(known) if known.digest == entry.digest => {}
                 Some(_) => return Some(AppendRejectionReason::DigestMismatch),
-                None => return Some(AppendRejectionReason::SequenceGap),
-            }
-        }
-        None
-    }
-
-    /// The first novel entry must continue exactly from the current
-    /// head: sequence head+1, previous digest equal to the head digest.
-    fn boundary_violation(&self, novel: &[EntryEnvelope]) -> Option<AppendRejectionReason> {
-        let first = novel.first()?;
-        let first_sequence = first.sequence.clone().into_u64();
-        match &self.head {
-            None => {
-                if first_sequence != 1 {
+                None if sequence <= head_sequence => {
                     return Some(AppendRejectionReason::SequenceGap);
                 }
-                if first.previous_digest.is_some() {
-                    return Some(AppendRejectionReason::HeadForked);
-                }
-            }
-            Some(head) => {
-                if first_sequence != head.sequence.clone().into_u64() + 1 {
-                    return Some(AppendRejectionReason::SequenceGap);
-                }
-                if first.previous_digest.as_ref() != Some(&head.digest) {
-                    return Some(AppendRejectionReason::HeadForked);
-                }
+                None => {}
             }
         }
         None

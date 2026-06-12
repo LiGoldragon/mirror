@@ -51,14 +51,13 @@ impl CommandLine {
     }
 
     pub fn run(self, mut output: impl Write) -> Result<()> {
-        let argument = self
-            .argument
-            .ok_or_else(|| Error::Io(std::io::Error::other("missing NOTA request argument")))?;
-        let input: signal_mirror::Input = argument
-            .parse()
-            .map_err(|error| Error::Io(std::io::Error::other(format!("invalid NOTA: {error}"))))?;
-        let socket = DaemonSocket::from_environment("MIRROR_SOCKET")
-            .ok_or_else(|| Error::Io(std::io::Error::other("MIRROR_SOCKET is not set")))?;
+        let argument = self.argument.ok_or(Error::MissingArgument)?;
+        let input: signal_mirror::Input = argument.parse().map_err(Error::NotaDecode)?;
+        let socket = DaemonSocket::from_environment("MIRROR_SOCKET").ok_or_else(|| {
+            Error::SocketVariableUnset {
+                variable: "MIRROR_SOCKET".to_owned(),
+            }
+        })?;
         let reply = socket.exchange(input.encode_signal_frame()?)?;
         let (_route, decoded) = signal_mirror::Output::decode_signal_frame(&reply)?;
         writeln!(output, "{}", decoded.to_nota()).map_err(Error::Io)?;
@@ -80,14 +79,13 @@ impl MetaCommandLine {
     }
 
     pub fn run(self, mut output: impl Write) -> Result<()> {
-        let argument = self
-            .argument
-            .ok_or_else(|| Error::Io(std::io::Error::other("missing NOTA request argument")))?;
-        let input: meta_signal_mirror::Input = argument
-            .parse()
-            .map_err(|error| Error::Io(std::io::Error::other(format!("invalid NOTA: {error}"))))?;
-        let socket = DaemonSocket::from_environment("MIRROR_META_SOCKET")
-            .ok_or_else(|| Error::Io(std::io::Error::other("MIRROR_META_SOCKET is not set")))?;
+        let argument = self.argument.ok_or(Error::MissingArgument)?;
+        let input: meta_signal_mirror::Input = argument.parse().map_err(Error::NotaDecode)?;
+        let socket = DaemonSocket::from_environment("MIRROR_META_SOCKET").ok_or_else(|| {
+            Error::SocketVariableUnset {
+                variable: "MIRROR_META_SOCKET".to_owned(),
+            }
+        })?;
         let reply = socket.exchange(input.encode_signal_frame()?)?;
         let (_route, decoded) = meta_signal_mirror::Output::decode_signal_frame(&reply)?;
         writeln!(output, "{}", decoded.to_nota()).map_err(Error::Io)?;

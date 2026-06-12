@@ -2,9 +2,13 @@
 //! (`MirrorEngine::handle`): append with matching expected head accepted
 //! and the head advances; a duplicate suffix acknowledges idempotently
 //! (same head, no duplicate rows); gaps and forks are rejected typed;
-//! restore returns checkpoint plus suffix; and the mirror's own ledger
-//! is itself a versioned sema-engine store (the dogfooding proof).
+//! the crash window between the entry transaction and the head advance
+//! self-heals on re-send; retire-then-re-register resumes the surviving
+//! chain; restore returns checkpoint plus suffix; and the mirror's own
+//! ledger is itself a versioned sema-engine store (the dogfooding
+//! proof).
 
+use mirror::schema::sema::{NovelSuffix, RecordFamily};
 use mirror::{MirrorEngine, Store};
 use signal_mirror::{
     AppendRejectionReason, ArtifactBytes, ArtifactDigest, Bytes, CheckpointArtifact,
@@ -268,6 +272,183 @@ async fn empty_suffix_is_rejected_typed() {
         }
         other => panic!("expected AppendRejected, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn crash_window_resend_re_advances_the_head_and_the_store_stays_live() {
+    let directory = tempfile::tempdir().expect("temp dir");
+    let mut crashed = Store::open(&directory.path().join("mirror.sema")).expect("store opens");
+    crashed.register_store(&store("spirit")).expect("registers");
+    // The crash window: `Store::persist_suffix` is two transactions —
+    // the entry rows commit, the head advance does not. Drive the first
+    // transaction through the same public seam persist_suffix uses,
+    // leaving exactly the state a crash between the two leaves behind.
+    crashed
+        .commit_entry_rows(&NovelSuffix {
+            store: store("spirit"),
+            head: head(2, 0x22),
+            entries: vec![envelope(1, None, 0x11), envelope(2, Some(0x11), 0x22)],
+        })
+        .expect("entry rows commit");
+    let mut engine = MirrorEngine::new(crashed);
+
+    // A DIVERGENT re-send into the crash window is a digest mismatch,
+    // never a rewrite.
+    let divergent = engine
+        .handle(append("spirit", None, vec![envelope(1, None, 0x99)]))
+        .await;
+    match divergent {
+        Output::AppendRejected(rejection) => {
+            assert_eq!(rejection.reason, AppendRejectionReason::DigestMismatch);
+        }
+        other => panic!("expected AppendRejected, got {other:?}"),
+    }
+
+    // The shipper's idempotent re-send: the orphan rows dedup against
+    // the loaded known rows and the head re-advances head-only. A
+    // re-asserted row would have faulted the persist (sema-engine
+    // rejects duplicate assert keys), so Appended IS the proof no row
+    // was rewritten.
+    let healed = engine
+        .handle(append(
+            "spirit",
+            None,
+            vec![envelope(1, None, 0x11), envelope(2, Some(0x11), 0x22)],
+        ))
+        .await;
+    match healed {
+        Output::Appended(receipt) => assert_eq!(receipt.head, head(2, 0x22)),
+        other => panic!("expected the re-send to heal the crash window, got {other:?}"),
+    }
+
+    // The store stays live: the next append continues the chain.
+    let appended = engine
+        .handle(append(
+            "spirit",
+            Some(head(2, 0x22)),
+            vec![envelope(3, Some(0x22), 0x33)],
+        ))
+        .await;
+    match appended {
+        Output::Appended(receipt) => assert_eq!(receipt.head, head(3, 0x33)),
+        other => panic!("expected Appended after healing, got {other:?}"),
+    }
+
+    let heads = engine
+        .handle(Input::ObserveHeads(HeadQuery::new(Some(store("spirit")))))
+        .await;
+    match heads {
+        Output::HeadsObserved(listing) => {
+            assert_eq!(listing.payload()[0].head, Some(head(3, 0x33)));
+        }
+        other => panic!("expected HeadsObserved, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn retire_then_reregister_resumes_the_surviving_chain() {
+    let mut fixture = Fixture::with_registered("spirit");
+    let first = fixture
+        .handle(append(
+            "spirit",
+            None,
+            vec![envelope(1, None, 0x11), envelope(2, Some(0x11), 0x22)],
+        ))
+        .await;
+    assert!(matches!(first, Output::Appended(_)));
+
+    let retired = fixture
+        .engine
+        .handle_meta(meta_signal_mirror::Input::RetireStore(
+            meta_signal_mirror::StoreRetirement::new(meta_signal_mirror::StoreName::new(
+                "spirit".to_owned(),
+            )),
+        ));
+    assert!(matches!(
+        retired,
+        meta_signal_mirror::Output::StoreRetired(_)
+    ));
+
+    // Re-registration RESUMES: retirement keeps the received entries
+    // (retention enforcement is deferred), so the head restores from
+    // the highest surviving entry row instead of restarting at genesis
+    // and faulting on re-asserted rows.
+    let reregistered = fixture
+        .engine
+        .handle_meta(meta_signal_mirror::Input::RegisterStore(
+            meta_signal_mirror::StoreRegistration::new(meta_signal_mirror::StoreName::new(
+                "spirit".to_owned(),
+            )),
+        ));
+    assert!(matches!(
+        reregistered,
+        meta_signal_mirror::Output::StoreRegistered(_)
+    ));
+
+    let heads = fixture
+        .handle(Input::ObserveHeads(HeadQuery::new(Some(store("spirit")))))
+        .await;
+    match heads {
+        Output::HeadsObserved(listing) => {
+            assert_eq!(listing.payload()[0].head, Some(head(2, 0x22)));
+        }
+        other => panic!("expected HeadsObserved, got {other:?}"),
+    }
+
+    // The shipper's full re-send acknowledges idempotently...
+    let resend = fixture
+        .handle(append(
+            "spirit",
+            None,
+            vec![envelope(1, None, 0x11), envelope(2, Some(0x11), 0x22)],
+        ))
+        .await;
+    match resend {
+        Output::Appended(receipt) => assert_eq!(receipt.head, head(2, 0x22)),
+        other => panic!("expected idempotent Appended, got {other:?}"),
+    }
+
+    // ...and the chain continues from the resumed head.
+    let appended = fixture
+        .handle(append(
+            "spirit",
+            Some(head(2, 0x22)),
+            vec![envelope(3, Some(0x22), 0x33)],
+        ))
+        .await;
+    match appended {
+        Output::Appended(receipt) => assert_eq!(receipt.head, head(3, 0x33)),
+        other => panic!("expected Appended after resume, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn separator_bearing_store_name_is_refused_at_registration() {
+    let mut fixture = Fixture::new();
+    let refused = fixture
+        .engine
+        .handle_meta(meta_signal_mirror::Input::RegisterStore(
+            meta_signal_mirror::StoreRegistration::new(meta_signal_mirror::StoreName::new(
+                "spirit/evil".to_owned(),
+            )),
+        ));
+    match refused {
+        meta_signal_mirror::Output::OrderRejected(rejection) => {
+            assert_eq!(
+                rejection.reason,
+                meta_signal_mirror::OrderRejectionReason::StoreNameInvalid
+            );
+        }
+        other => panic!("expected OrderRejected, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_mirror_own_store_name_is_pinned() {
+    // The mirror's own versioned ledger registers under the emitted
+    // schema identity. Deploy tooling and restore paths name it; this
+    // pin catches silent drift in the emission.
+    assert_eq!(RecordFamily::STORE_NAME, "mirror:sema");
 }
 
 #[tokio::test]

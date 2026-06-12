@@ -38,5 +38,8 @@ pub use engine::MirrorEngine;
 pub use error::{Error, Result};
 pub use schema::daemon::{ComponentDaemon, DaemonCommand, DaemonEntry, DaemonError};
 pub use schema_daemon::MirrorDaemon;
-pub use service::{MirrorService, ObservedTcpPeers, ServiceLink, TailnetIngress, TcpAddressQuery};
+pub use service::{
+    MirrorService, ServiceLink, TailnetIngress, TcpAddressQuery, TcpPeerWitness,
+    TcpPeerWitnessQuery,
+};
 pub use store::Store;

@@ -5,8 +5,9 @@
 ;; is version-controlled by the same mechanism it serves). The declared
 ;; record families below emit the generated `RecordFamily` surface:
 ;; pinned per-family schema hashes, sema-engine table descriptors, and
-;; the component VersioningPolicy whose store name is the schema
-;; identity component (`mirror`).
+;; the component VersioningPolicy whose versioned store name is the
+;; emitted schema identity `mirror:sema` (crate plus plane; pinned by
+;; a witness in tests/daemon_logic.rs).
 ;;
 ;; Stored rows are SELF-CONTAINED local declarations: the mirror's
 ;; durable shape must not move when the wire contract churns. Wire

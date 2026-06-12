@@ -39,7 +39,7 @@ pub struct MirrorService {
     tcp_listen_address: SocketAddr,
     tcp_bound_address: Option<SocketAddr>,
     tcp_listener_task: Option<tokio::task::JoinHandle<()>>,
-    observed_tcp_peers: Vec<PeerIdentity>,
+    tcp_peer_witness: TcpPeerWitness,
 }
 
 impl MirrorService {
@@ -49,8 +49,54 @@ impl MirrorService {
             tcp_listen_address,
             tcp_bound_address: None,
             tcp_listener_task: None,
-            observed_tcp_peers: Vec::new(),
+            tcp_peer_witness: TcpPeerWitness::default(),
         }
+    }
+}
+
+/// The bounded tailnet-traffic witness: how many TCP-borne working
+/// requests the service handled and the most recent typed peer. O(1)
+/// state per service — the witness surface for tests without an
+/// unbounded production peer list.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TcpPeerWitness {
+    served_request_count: u64,
+    last_peer: Option<PeerIdentity>,
+}
+
+/// Hand-written because the `kameo::Reply` derive emits absolute
+/// `::kameo` paths and the mirror reaches kameo only through
+/// `triad_runtime`'s re-export.
+impl triad_runtime::kameo::Reply for TcpPeerWitness {
+    type Ok = Self;
+    type Error = triad_runtime::kameo::error::Infallible;
+    type Value = Self;
+
+    fn to_result(self) -> std::result::Result<Self::Ok, Self::Error> {
+        Ok(self)
+    }
+
+    fn into_any_err(self) -> Option<Box<dyn triad_runtime::kameo::reply::ReplyError>> {
+        None
+    }
+
+    fn into_value(self) -> Self::Value {
+        self
+    }
+}
+
+impl TcpPeerWitness {
+    pub fn served_request_count(&self) -> u64 {
+        self.served_request_count
+    }
+
+    pub fn last_peer(&self) -> Option<PeerIdentity> {
+        self.last_peer
+    }
+
+    fn observe(&mut self, peer: PeerIdentity) {
+        self.served_request_count += 1;
+        self.last_peer = Some(peer);
     }
 }
 
@@ -118,7 +164,7 @@ impl Message<WorkingSignal> for MirrorService {
         _context: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         if let PeerIdentity::Tcp(_) = message.context.peer() {
-            self.observed_tcp_peers.push(*message.context.peer());
+            self.tcp_peer_witness.observe(*message.context.peer());
         }
         Ok(self.engine.handle(message.input).await)
     }
@@ -164,19 +210,19 @@ impl Message<TcpAddressQuery> for MirrorService {
     }
 }
 
-/// Observe the typed peer identities the TCP ingress carried — the
-/// witness that tailnet traffic arrives as `PeerIdentity::Tcp`.
-pub struct ObservedTcpPeers;
+/// Observe the bounded TCP traffic witness — the proof that tailnet
+/// traffic arrives as typed `PeerIdentity::Tcp`.
+pub struct TcpPeerWitnessQuery;
 
-impl Message<ObservedTcpPeers> for MirrorService {
-    type Reply = Vec<PeerIdentity>;
+impl Message<TcpPeerWitnessQuery> for MirrorService {
+    type Reply = TcpPeerWitness;
 
     async fn handle(
         &mut self,
-        _message: ObservedTcpPeers,
+        _message: TcpPeerWitnessQuery,
         _context: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
-        self.observed_tcp_peers.clone()
+        self.tcp_peer_witness
     }
 }
 
@@ -228,9 +274,9 @@ impl ServiceLink {
             .map_err(|_| Error::ServiceUnavailable)
     }
 
-    pub async fn observed_tcp_peers(&self) -> Result<Vec<PeerIdentity>> {
+    pub async fn tcp_peer_witness(&self) -> Result<TcpPeerWitness> {
         self.service
-            .ask(ObservedTcpPeers)
+            .ask(TcpPeerWitnessQuery)
             .await
             .map_err(|_| Error::ServiceUnavailable)
     }
