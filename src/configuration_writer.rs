@@ -3,7 +3,7 @@
 //!
 //! The request is the `meta-signal-mirror` contract's
 //! `ConfigurationWrite` record (destination path + typed
-//! `MirrorDaemonConfiguration`), read as the single NOTA argument
+//! `DaemonConfiguration`), read as the single NOTA argument
 //! (inline or a `.nota` file). The daemon itself never parses NOTA.
 
 use meta_signal_mirror::{ConfigurationWrite, WirePath};

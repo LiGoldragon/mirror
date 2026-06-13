@@ -5,9 +5,9 @@
 //! decode -> ask -> encode spine, the two-tier Unix listener bind, and
 //! the `ExitReport` entry) is EMITTED into `src/schema/daemon.rs` by
 //! schema-rust-next's daemon emitter. The mirror fills the escape
-//! hatches through `impl ComponentDaemon for MirrorDaemon`: its
+//! hatches through `impl ComponentDaemon for Daemon`: its
 //! `Configuration`, building the shared `ServiceLink` runtime (which
-//! spawns the one `MirrorService` actor — and with it the hand-wired
+//! spawns the one `Service` actor — and with it the hand-wired
 //! tailnet TCP ingress), the working-input forward, and the meta tier.
 
 use std::time::Duration;
@@ -19,10 +19,10 @@ use triad_runtime::{
 };
 
 use crate::config::{Configuration, ConfigurationError};
-use crate::engine::MirrorEngine;
+use crate::engine::Engine;
 use crate::error::Error;
 use crate::schema::daemon::ComponentDaemon;
-use crate::service::{MirrorService, ServiceLink};
+use crate::service::{Service, ServiceLink};
 
 /// Maximum inbound meta-request-frame body the daemon accepts (1 MiB). A
 /// meta order is a few hundred bytes; this bounds a hostile length prefix
@@ -34,12 +34,12 @@ const MAXIMUM_META_FRAME_BYTES: usize = 1024 * 1024;
 const META_REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The type-level selector for the mirror's emitted daemon. It carries no
-/// runtime data — it is the marker the emitted `DaemonCommand<MirrorDaemon>`
+/// runtime data — it is the marker the emitted `DaemonCommand<Daemon>`
 /// dispatches on, selecting the mirror's `Configuration` / `Engine` /
 /// `Error` through the `ComponentDaemon` associated types.
-pub struct MirrorDaemon;
+pub struct Daemon;
 
-impl ComponentDaemon for MirrorDaemon {
+impl ComponentDaemon for Daemon {
     type Configuration = Configuration;
     type ConfigurationError = ConfigurationError;
     type Engine = ServiceLink;
@@ -53,15 +53,12 @@ impl ComponentDaemon for MirrorDaemon {
         Configuration::from_binary_path(path)
     }
 
-    /// Open the durable store, spawn the one `MirrorService` actor (whose
+    /// Open the durable store, spawn the one `Service` actor (whose
     /// `on_start` binds the tailnet TCP ingress), and hand the generated
     /// daemon a cloneable link into its mailbox.
     fn build_runtime(configuration: &Self::Configuration) -> Result<Self::Engine, Self::Error> {
-        let engine = MirrorEngine::open(configuration)?;
-        let service = MirrorService::spawn(MirrorService::new(
-            engine,
-            configuration.tcp_listen_address(),
-        ));
+        let engine = Engine::open(configuration)?;
+        let service = Service::spawn(Service::new(engine, configuration.tcp_listen_address()));
         Ok(ServiceLink::new(service))
     }
 

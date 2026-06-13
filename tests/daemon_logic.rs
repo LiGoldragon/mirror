@@ -1,5 +1,5 @@
 //! Daemon-logic witnesses driven through the engine's full Nexus path
-//! (`MirrorEngine::handle`): append with matching expected head accepted
+//! (`Engine::handle`): append with matching expected head accepted
 //! and the head advances; a duplicate suffix acknowledges idempotently
 //! (same head, no duplicate rows); gaps and forks are rejected typed;
 //! the crash window between the entry transaction and the head advance
@@ -9,7 +9,7 @@
 //! proof).
 
 use mirror::schema::sema::{NovelSuffix, RecordFamily};
-use mirror::{MirrorEngine, Store};
+use mirror::{Engine, Store};
 use signal_mirror::{
     AppendRejectionReason, ArtifactBytes, ArtifactDigest, Bytes, CheckpointArtifact,
     CheckpointSequence, CommitSequence, EntryDigest, EntryEnvelope, EntrySuffix, FixedBytes,
@@ -19,7 +19,7 @@ use signal_mirror::{
 
 struct Fixture {
     _directory: tempfile::TempDir,
-    engine: MirrorEngine,
+    engine: Engine,
 }
 
 impl Fixture {
@@ -28,7 +28,7 @@ impl Fixture {
         let store = Store::open(&directory.path().join("mirror.sema")).expect("mirror store opens");
         Self {
             _directory: directory,
-            engine: MirrorEngine::new(store),
+            engine: Engine::new(store),
         }
     }
 
@@ -290,7 +290,7 @@ async fn crash_window_resend_re_advances_the_head_and_the_store_stays_live() {
             entries: vec![envelope(1, None, 0x11), envelope(2, Some(0x11), 0x22)],
         })
         .expect("entry rows commit");
-    let mut engine = MirrorEngine::new(crashed);
+    let mut engine = Engine::new(crashed);
 
     // A DIVERGENT re-send into the crash window is a digest mismatch,
     // never a rewrite.

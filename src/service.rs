@@ -1,7 +1,7 @@
 //! The mirror service actor — the one component runtime both transports
 //! share.
 //!
-//! `MirrorService` is the kameo actor that owns `MirrorEngine` (and so
+//! `Service` is the kameo actor that owns `Engine` (and so
 //! the single-writer durable store). The generated Unix daemon's
 //! `EngineActor` holds a `ServiceLink` and forwards working and meta
 //! requests into this mailbox; the hand-wired tailnet TCP ingress
@@ -29,21 +29,21 @@ use triad_runtime::{
     PeerIdentity, RequestErrorLog, TcpListenerDaemon,
 };
 
-use crate::engine::MirrorEngine;
+use crate::engine::Engine;
 use crate::error::{Error, Result};
 
 /// The mirror's component runtime: the engine, the configured tailnet
 /// ingress address, and the live listener state once started.
-pub struct MirrorService {
-    engine: MirrorEngine,
+pub struct Service {
+    engine: Engine,
     tcp_listen_address: SocketAddr,
     tcp_bound_address: Option<SocketAddr>,
     tcp_listener_task: Option<tokio::task::JoinHandle<()>>,
     tcp_peer_witness: TcpPeerWitness,
 }
 
-impl MirrorService {
-    pub fn new(engine: MirrorEngine, tcp_listen_address: SocketAddr) -> Self {
+impl Service {
+    pub fn new(engine: Engine, tcp_listen_address: SocketAddr) -> Self {
         Self {
             engine,
             tcp_listen_address,
@@ -100,7 +100,7 @@ impl TcpPeerWitness {
     }
 }
 
-impl Actor for MirrorService {
+impl Actor for Service {
     type Args = Self;
     type Error = Error;
 
@@ -155,7 +155,7 @@ impl WorkingSignal {
     }
 }
 
-impl Message<WorkingSignal> for MirrorService {
+impl Message<WorkingSignal> for Service {
     type Reply = Result<signal_mirror::Output>;
 
     async fn handle(
@@ -182,7 +182,7 @@ impl MetaOrder {
     }
 }
 
-impl Message<MetaOrder> for MirrorService {
+impl Message<MetaOrder> for Service {
     type Reply = Result<meta_signal_mirror::Output>;
 
     async fn handle(
@@ -198,7 +198,7 @@ impl Message<MetaOrder> for MirrorService {
 /// witnesses read the operating-system-assigned port here).
 pub struct TcpAddressQuery;
 
-impl Message<TcpAddressQuery> for MirrorService {
+impl Message<TcpAddressQuery> for Service {
     type Reply = Option<SocketAddr>;
 
     async fn handle(
@@ -214,7 +214,7 @@ impl Message<TcpAddressQuery> for MirrorService {
 /// traffic arrives as typed `PeerIdentity::Tcp`.
 pub struct TcpPeerWitnessQuery;
 
-impl Message<TcpPeerWitnessQuery> for MirrorService {
+impl Message<TcpPeerWitnessQuery> for Service {
     type Reply = TcpPeerWitness;
 
     async fn handle(
@@ -231,11 +231,11 @@ impl Message<TcpPeerWitnessQuery> for MirrorService {
 /// TCP ingress holds the same `ActorRef`.
 #[derive(Clone)]
 pub struct ServiceLink {
-    service: ActorRef<MirrorService>,
+    service: ActorRef<Service>,
 }
 
 impl ServiceLink {
-    pub fn new(service: ActorRef<MirrorService>) -> Self {
+    pub fn new(service: ActorRef<Service>) -> Self {
         Self { service }
     }
 
@@ -288,12 +288,12 @@ impl ServiceLink {
 /// request frame per connection, mirroring the generated working
 /// transport's request shape.
 pub struct TailnetIngress {
-    service: ActorRef<MirrorService>,
+    service: ActorRef<Service>,
     codec: LengthPrefixedCodec,
 }
 
 impl TailnetIngress {
-    pub fn new(service: ActorRef<MirrorService>) -> Self {
+    pub fn new(service: ActorRef<Service>) -> Self {
         Self {
             service,
             codec: LengthPrefixedCodec::default(),

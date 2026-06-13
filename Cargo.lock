@@ -369,7 +369,7 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 [[package]]
 name = "meta-signal-mirror"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=main#674f24d2b61d8680c902aeee442d335ad817e050"
+source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=main#6a56fcb0ff95525d600fdc1cb83fa009022167d3"
 dependencies = [
  "nota-next 0.4.0 (git+https://github.com/LiGoldragon/nota-next.git?branch=structural-shape-extension)",
  "rkyv",

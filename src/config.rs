@@ -1,6 +1,6 @@
 //! The mirror daemon's runtime configuration wrapper.
 //!
-//! The typed configuration record `MirrorDaemonConfiguration` lives in the
+//! The typed configuration record `DaemonConfiguration` lives in the
 //! `meta-signal-mirror` contract; the daemon decodes it from its single
 //! binary rkyv startup argument and wraps it here so the daemon crate can
 //! implement `triad_runtime::BindingSurface` (a foreign trait on a foreign
@@ -9,7 +9,7 @@
 use std::net::SocketAddr;
 use std::path::Path;
 
-use meta_signal_mirror::{ConfigurationArchiveError, MirrorDaemonConfiguration};
+use meta_signal_mirror::{ConfigurationArchiveError, DaemonConfiguration};
 use thiserror::Error;
 use triad_runtime::{BindingSurface, SocketMode};
 
@@ -17,17 +17,17 @@ use triad_runtime::{BindingSurface, SocketMode};
 /// parsed tailnet socket address.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Configuration {
-    contract: MirrorDaemonConfiguration,
+    contract: DaemonConfiguration,
     tcp_listen_address: SocketAddr,
 }
 
 impl Configuration {
     /// Decode the daemon's single binary startup argument.
     pub fn from_binary_path(path: &Path) -> Result<Self, ConfigurationError> {
-        MirrorDaemonConfiguration::from_binary_path(path)?.try_into()
+        DaemonConfiguration::from_binary_path(path)?.try_into()
     }
 
-    pub fn contract(&self) -> &MirrorDaemonConfiguration {
+    pub fn contract(&self) -> &DaemonConfiguration {
         &self.contract
     }
 
@@ -43,10 +43,10 @@ impl Configuration {
     }
 }
 
-impl TryFrom<MirrorDaemonConfiguration> for Configuration {
+impl TryFrom<DaemonConfiguration> for Configuration {
     type Error = ConfigurationError;
 
-    fn try_from(contract: MirrorDaemonConfiguration) -> Result<Self, Self::Error> {
+    fn try_from(contract: DaemonConfiguration) -> Result<Self, Self::Error> {
         let address = contract.tcp_listen_address.as_str();
         let tcp_listen_address =
             address

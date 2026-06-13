@@ -35,13 +35,12 @@ pub mod schema {
 }
 
 pub use config::{Configuration, ConfigurationError};
-pub use engine::MirrorEngine;
+pub use engine::Engine;
 pub use error::{Error, Result};
 pub use schema::daemon::{ComponentDaemon, DaemonCommand, DaemonEntry, DaemonError};
-pub use schema_daemon::MirrorDaemon;
+pub use schema_daemon::Daemon;
 pub use service::{
-    MirrorService, ServiceLink, TailnetIngress, TcpAddressQuery, TcpPeerWitness,
-    TcpPeerWitnessQuery,
+    Service, ServiceLink, TailnetIngress, TcpAddressQuery, TcpPeerWitness, TcpPeerWitnessQuery,
 };
 pub use shipper::{
     ComponentShipper, MirrorTailnetClient, PublishLatestCheckpoint, ShipOutcome, ShipUnshipped,

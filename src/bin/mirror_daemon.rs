@@ -6,8 +6,8 @@
 //! the request spine; the mirror service actor binds the tailnet TCP
 //! ingress on startup.
 
-use mirror::{DaemonEntry, MirrorDaemon};
+use mirror::{Daemon, DaemonEntry};
 
 fn main() -> std::process::ExitCode {
-    MirrorDaemon::run_to_exit_code()
+    Daemon::run_to_exit_code()
 }

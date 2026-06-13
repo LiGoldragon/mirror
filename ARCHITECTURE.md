@@ -19,7 +19,7 @@ tier's `Input`/`Output` come from the dependency contract `signal-mirror`
 | Nexus | `schema/nexus.schema` | the feature catalog: `AppendDecision` (expected-head validation, idempotent dedup by entry digest, gap/fork rejection) and `CheckpointDecision` (registration + coverage monotonicity) |
 | SEMA | `schema/sema.schema` | the mirror's OWN versioned store: declared record families (`StoredHead`, `ReceivedEntry`, `StoredCheckpoint`, `RetentionSetting`) emit the `RecordFamily` surface and `VersioningPolicy` (versioned store name `mirror:sema`, pinned by a witness) |
 
-`MirrorEngine` (src/engine.rs) is the data-bearing noun implementing the
+`Engine` (src/engine.rs) is the data-bearing noun implementing the
 generated `NexusEngine` and `SemaEngine`; `Store` (src/store.rs) owns the
 sema-engine database; the decisions are methods on the schema-emitted
 checked nouns (src/decision.rs). One working request flows
@@ -32,10 +32,10 @@ SEMA persist (write) -> Signal reply.
 Unix working socket  ──┐  (generated AsyncMultiListenerDaemon, signal-mirror)
 Unix meta socket     ──┤  (generated, owner-only 0o600, meta-signal-mirror)
 tailnet TCP ingress  ──┘  (hand-wired triad_runtime::TcpListenerDaemon)
-            all three -> ActorRef<MirrorService> -> MirrorEngine -> Store
+            all three -> ActorRef<Service> -> Engine -> Store
 ```
 
-`MirrorService` (src/service.rs) is the kameo actor owning the engine — the
+`Service` (src/service.rs) is the kameo actor owning the engine — the
 ONE component runtime both transports share. The generated daemon's
 `ComponentDaemon::Engine` is a cloneable `ServiceLink` into its mailbox;
 the service's own `on_start` binds `triad_runtime::TcpListenerDaemon`
@@ -130,7 +130,7 @@ Registration semantics:
 
 | Binary | Role |
 |---|---|
-| `mirror-daemon` | the daemon; exactly one argument: a binary rkyv `MirrorDaemonConfiguration` file (never parses NOTA) |
+| `mirror-daemon` | the daemon; exactly one argument: a binary rkyv `DaemonConfiguration` file (never parses NOTA) |
 | `mirror` | thin working CLI: one NOTA argument over `MIRROR_SOCKET` |
 | `meta-mirror` | thin meta CLI: one NOTA argument over `MIRROR_META_SOCKET` |
 | `mirror-write-configuration` | deploy text edge: NOTA `ConfigurationWrite` -> binary startup file |

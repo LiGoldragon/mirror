@@ -19,8 +19,8 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use mirror::{
-    ComponentShipper, MirrorEngine, MirrorService, MirrorTailnetClient, PublishLatestCheckpoint,
-    ServiceLink, ShipOutcome, ShipUnshipped, Store,
+    ComponentShipper, Engine, MirrorTailnetClient, PublishLatestCheckpoint, Service, ServiceLink,
+    ShipOutcome, ShipUnshipped, Store,
 };
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use sema_engine::{
@@ -201,8 +201,8 @@ impl ComponentFixture {
 
 async fn running_mirror(directory: &tempfile::TempDir) -> (ServiceLink, SocketAddr) {
     let store = Store::open(&directory.path().join("mirror.sema")).expect("mirror store opens");
-    let service = MirrorService::spawn(MirrorService::new(
-        MirrorEngine::new(store),
+    let service = Service::spawn(Service::new(
+        Engine::new(store),
         "127.0.0.1:0".parse().expect("loopback address"),
     ));
     service.wait_for_startup().await;

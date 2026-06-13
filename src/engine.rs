@@ -1,7 +1,7 @@
 //! The mirror runtime engine — the data-bearing noun the schema-emitted
 //! planes attach to.
 //!
-//! `MirrorEngine` owns the durable `Store` (the mirror's own versioned
+//! `Engine` owns the durable `Store` (the mirror's own versioned
 //! sema-engine database) and implements the generated `NexusEngine` and
 //! `SemaEngine` traits. One working request flows
 //! Signal -> Nexus decide -> SEMA check (read) -> Nexus decision
@@ -33,11 +33,11 @@ use crate::store::Store;
 
 /// The mirror daemon's engine: the single writer over the mirror's own
 /// versioned store.
-pub struct MirrorEngine {
+pub struct Engine {
     store: Store,
 }
 
-impl MirrorEngine {
+impl Engine {
     pub fn new(store: Store) -> Self {
         Self { store }
     }
@@ -339,7 +339,7 @@ impl MirrorEngine {
     }
 }
 
-impl NexusEngine for MirrorEngine {
+impl NexusEngine for Engine {
     fn decide(
         &mut self,
         input: nexus_schema::nexus::Nexus<nexus_schema::nexus::Work>,
@@ -400,7 +400,7 @@ impl NexusEngine for MirrorEngine {
     }
 }
 
-impl SemaEngine for MirrorEngine {
+impl SemaEngine for Engine {
     fn apply_inner(
         &mut self,
         input: sema_schema::sema::Sema<WriteInput>,
