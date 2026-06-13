@@ -140,11 +140,13 @@ Registration semantics:
 | Test | Proves |
 |---|---|
 | `tests/daemon_logic.rs` | accept + head advance, idempotent duplicate (no new log entries), partial-duplicate remainder, the crash-window re-send healing (head-only re-advance; store stays live), retire-then-re-register resuming the surviving chain, typed gap/fork/digest-mismatch/empty/name-invalid rejections, the pinned `mirror:sema` store name, restore bundle shape, and the mirror's own ledger being versioned (dogfooding) |
-| `tests/end_to_end_arc.rs` | the whole arc across two engines: component outbox -> real loopback TCP frames -> running mirror -> `ServerCommitted` -> fresh store restores via `ImportSession` and reads identical records (Spirit `29pb`, first cut) |
+| `tests/end_to_end_arc.rs` | the whole arc across two engines: production `ComponentShipper` component outbox -> real loopback TCP frames -> running mirror -> `ServerCommitted` -> fresh store restores via `ImportSession` and reads identical records (Spirit `29pb`, first cut) |
 
 ## Not owned
 
 Component record types (payload-blind), retention ENFORCEMENT (stored
 placeholder only; deferred), BLS attestation (deferred), and the
-production component-side shipper actor (the test fixture carries the
-first shipper; a production shipper is a named follow-up).
+component engine-owner topology. `ComponentShipper` is reusable and can
+be spawned as the engine-owning actor, but components that already have a
+single engine-owning actor should call the same shipper methods from that
+actor instead of introducing a second owner for the same store.

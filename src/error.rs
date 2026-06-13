@@ -37,6 +37,41 @@ pub enum Error {
     #[error("ledger storage: {0}")]
     Ledger(#[from] sema_engine::Error),
 
+    #[error("payload encode for {surface}: {message}")]
+    PayloadEncode {
+        surface: &'static str,
+        message: String,
+    },
+
+    #[error("component outbox has {outbox_rows} rows but replay returned {replay_entries} entries")]
+    OutboxSuffixMismatch {
+        outbox_rows: usize,
+        replay_entries: usize,
+    },
+
+    #[error("no checkpoint is available to publish")]
+    CheckpointUnavailable,
+
+    #[error("mirror append rejected: {reason:?}")]
+    MirrorAppendRejected {
+        reason: signal_mirror::AppendRejectionReason,
+        head: Option<signal_mirror::HeadMark>,
+    },
+
+    #[error("mirror checkpoint publish rejected: {reason:?}")]
+    MirrorPublishRejected {
+        reason: signal_mirror::PublishRejectionReason,
+    },
+
+    #[error("mirror faulted: {detail}")]
+    MirrorFaulted { detail: String },
+
+    #[error("unexpected mirror output while waiting for {expected}: {actual}")]
+    UnexpectedMirrorOutput {
+        expected: &'static str,
+        actual: String,
+    },
+
     #[error("tailnet listener: {0}")]
     TailnetListener(#[from] AsyncListenerError),
 

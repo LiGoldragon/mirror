@@ -22,6 +22,7 @@ pub mod engine;
 pub mod error;
 pub mod schema_daemon;
 pub mod service;
+pub mod shipper;
 pub mod store;
 
 pub mod schema {
@@ -41,5 +42,8 @@ pub use schema_daemon::MirrorDaemon;
 pub use service::{
     MirrorService, ServiceLink, TailnetIngress, TcpAddressQuery, TcpPeerWitness,
     TcpPeerWitnessQuery,
+};
+pub use shipper::{
+    ComponentShipper, MirrorTailnetClient, PublishLatestCheckpoint, ShipOutcome, ShipUnshipped,
 };
 pub use store::Store;
