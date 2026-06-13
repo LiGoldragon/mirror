@@ -1,6 +1,6 @@
 [package]
 name         = "mirror"
-version      = "0.1.0"
+version      = "0.2.0"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
@@ -40,7 +40,7 @@ nota-text = ["signal-mirror/nota-text", "meta-signal-mirror/nota-text"]
 meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", branch = "main" }
 nota-next          = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "structural-shape-extension" }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
-sema-engine        = { git = "https://github.com/LiGoldragon/sema-engine.git", branch = "main" }
+sema-engine        = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "65a6126a3eeb9e1741878f8c39eb12864541c36e" }
 signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main" }
 signal-mirror      = { git = "https://github.com/LiGoldragon/signal-mirror.git", branch = "main" }
 thiserror          = "2"

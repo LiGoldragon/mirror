@@ -17,10 +17,11 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use mirror::{
-    ComponentShipper, Engine, MirrorTailnetClient, PublishLatestCheckpoint, Service, ServiceLink,
-    ShipOutcome, ShipUnshipped, Store,
+    ComponentShipper, Engine, PublishLatestCheckpoint, Service, ServiceLink, ShipOutcome,
+    ShipUnshipped, Store, TailnetClient,
 };
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use sema_engine::{
@@ -85,14 +86,14 @@ impl FamilyDirectory for Families {
 /// The component-side restorer: fetch checkpoint + suffix from the
 /// mirror and import them into a fresh store.
 struct Restorer {
-    client: MirrorTailnetClient,
+    client: TailnetClient,
     store_name: StoreName,
 }
 
 impl Restorer {
     fn new(address: SocketAddr) -> Self {
         Self {
-            client: MirrorTailnetClient::new(address),
+            client: TailnetClient::new(address),
             store_name: StoreName::new(COMPONENT_STORE_NAME.to_owned()),
         }
     }
@@ -219,6 +220,11 @@ async fn running_mirror(directory: &tempfile::TempDir) -> (ServiceLink, SocketAd
 async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically() {
     let fixture = ComponentFixture::new();
     let (source, source_thoughts) = fixture.populate();
+    // The component daemon and its shipper share ONE engine instance:
+    // the test holds the component store, the shipper an `Arc` clone of
+    // the same engine, and the `&self` mutators (internal lock) keep the
+    // sharing safe.
+    let source = Arc::new(source);
 
     // A running mirror daemon runtime: real engine, real store, real
     // loopback TCP listener.
@@ -248,7 +254,7 @@ async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically
     // SHIP: outbox suffix -> envelopes -> real TCP frames -> mirror
     // persists -> acknowledged head -> ServerCommitted.
     let shipper = ComponentShipper::new(
-        source,
+        Arc::clone(&source),
         address,
         VersionedStoreName::new(COMPONENT_STORE_NAME),
     );
@@ -290,7 +296,7 @@ async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically
         .expect("checkpoint publishes");
 
     // Re-shipping the same history is idempotent at the daemon level.
-    let resend = MirrorTailnetClient::new(address)
+    let resend = TailnetClient::new(address)
         .exchange(Input::Append(EntrySuffix {
             store: StoreName::new(COMPONENT_STORE_NAME.to_owned()),
             expected_head: None,
@@ -337,8 +343,9 @@ async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically
         .expect("thoughts re-register against the restored catalog");
 
     // The normal query surface reads identical records on both engines.
-    let source_records = shipper
-        .engine()
+    // The source read goes through the shared `source` handle — the same
+    // engine instance the shipper acknowledged into.
+    let source_records = source
         .match_records(QueryPlan::all(source_thoughts))
         .expect("source query")
         .records()
@@ -359,10 +366,7 @@ async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically
 
     // And the restored store continues the same digest chain.
     assert_eq!(
-        shipper
-            .engine()
-            .current_commit_sequence()
-            .expect("source cursor"),
+        source.current_commit_sequence().expect("source cursor"),
         target.current_commit_sequence().expect("target cursor"),
     );
 }
@@ -388,7 +392,7 @@ async fn component_shipper_actor_ships_suffix_and_publishes_checkpoint() {
     ));
 
     let shipper = ComponentShipper::spawn(ComponentShipper::new(
-        source,
+        Arc::new(source),
         address,
         VersionedStoreName::new(COMPONENT_STORE_NAME),
     ));

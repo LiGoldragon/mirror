@@ -43,6 +43,6 @@ pub use service::{
     Service, ServiceLink, TailnetIngress, TcpAddressQuery, TcpPeerWitness, TcpPeerWitnessQuery,
 };
 pub use shipper::{
-    ComponentShipper, MirrorTailnetClient, PublishLatestCheckpoint, ShipOutcome, ShipUnshipped,
+    ComponentShipper, PublishLatestCheckpoint, ShipOutcome, ShipUnshipped, TailnetClient,
 };
 pub use store::Store;

@@ -4,6 +4,7 @@
 //! into the component store.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use sema_engine::{
     Engine as ComponentEngine, MirrorHead, VersionedCommitLogEntry, VersionedStoreName,
@@ -25,11 +26,11 @@ use crate::error::{Error, Result};
 /// meta surface is intentionally absent: component shippers only append
 /// working history and publish checkpoint artifacts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MirrorTailnetClient {
+pub struct TailnetClient {
     address: SocketAddr,
 }
 
-impl MirrorTailnetClient {
+impl TailnetClient {
     pub fn new(address: SocketAddr) -> Self {
         Self { address }
     }
@@ -62,23 +63,23 @@ pub enum ShipOutcome {
 /// component's existing engine-owning actor, or spawned as a Kameo
 /// actor when the shipper owns the component engine itself.
 pub struct ComponentShipper {
-    engine: ComponentEngine,
-    client: MirrorTailnetClient,
+    engine: Arc<ComponentEngine>,
+    client: TailnetClient,
     store_name: StoreName,
 }
 
 impl ComponentShipper {
     pub fn new(
-        engine: ComponentEngine,
+        engine: Arc<ComponentEngine>,
         mirror_address: SocketAddr,
         store_name: VersionedStoreName,
     ) -> Self {
-        Self::with_client(engine, MirrorTailnetClient::new(mirror_address), store_name)
+        Self::with_client(engine, TailnetClient::new(mirror_address), store_name)
     }
 
     pub fn with_client(
-        engine: ComponentEngine,
-        client: MirrorTailnetClient,
+        engine: Arc<ComponentEngine>,
+        client: TailnetClient,
         store_name: VersionedStoreName,
     ) -> Self {
         Self {
@@ -92,7 +93,7 @@ impl ComponentShipper {
         &self.engine
     }
 
-    pub fn client(&self) -> MirrorTailnetClient {
+    pub fn client(&self) -> TailnetClient {
         self.client
     }
 

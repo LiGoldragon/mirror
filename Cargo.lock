@@ -391,7 +391,7 @@ dependencies = [
 
 [[package]]
 name = "mirror"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "meta-signal-mirror",
  "nota-next 0.4.0 (git+https://github.com/LiGoldragon/nota-next.git?branch=structural-shape-extension)",
@@ -647,8 +647,8 @@ dependencies = [
 
 [[package]]
 name = "sema-engine"
-version = "0.4.0"
-source = "git+https://github.com/LiGoldragon/sema-engine.git?branch=main#da959d66d3d2e2c3b2e807e00516655c09460999"
+version = "0.6.1"
+source = "git+https://github.com/LiGoldragon/sema-engine.git?rev=65a6126a3eeb9e1741878f8c39eb12864541c36e#65a6126a3eeb9e1741878f8c39eb12864541c36e"
 dependencies = [
  "blake3",
  "rkyv",
