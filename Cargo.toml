@@ -38,17 +38,17 @@ nota-text = ["signal-mirror/nota-text", "meta-signal-mirror/nota-text"]
 
 [dependencies]
 meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", branch = "main" }
-nota-next          = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "structural-shape-extension" }
+nota-next          = { git = "https://github.com/LiGoldragon/nota-next.git", branch = "main" }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 sema-engine        = { git = "https://github.com/LiGoldragon/sema-engine.git", branch = "main" }
 signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main" }
 signal-mirror      = { git = "https://github.com/LiGoldragon/signal-mirror.git", branch = "main" }
 thiserror          = "2"
 tokio              = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
-triad-runtime      = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "tailnet-listener" }
+triad-runtime      = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "main" }
 
 [build-dependencies]
-schema-rust-next = { git = "https://github.com/LiGoldragon/schema-rust-next.git", branch = "record-family-emission" }
+schema-rust-next = { git = "https://github.com/LiGoldragon/schema-rust-next.git", branch = "main" }
 
 [dev-dependencies]
 tempfile = "3"
