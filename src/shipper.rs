@@ -4,6 +4,7 @@
 //! into the component store.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use sema_engine::{
     Engine as ComponentEngine, MirrorHead, VersionedCommitLogEntry, VersionedStoreName,
@@ -61,13 +62,27 @@ pub enum ShipOutcome {
 /// The reusable production shipper. It can be used directly by a
 /// component's existing engine-owning actor, or spawned as a Kameo
 /// actor when the shipper owns the component engine itself.
+///
+/// The component engine is held behind an [`Arc`] so the shipper can
+/// either own its engine outright (via [`ComponentShipper::new`] /
+/// [`ComponentShipper::with_client`], which wrap the engine in a fresh
+/// `Arc`) or SHARE a component's already-`Arc`-held engine (via
+/// [`ComponentShipper::from_shared_engine`] /
+/// [`ComponentShipper::with_shared_client`]). Sharing matters because
+/// `sema_engine::Engine` is intentionally not `Clone`: a component such
+/// as spirit keeps its engine behind one `Arc<Engine>` and writes
+/// through it, and the shipper must read the SAME engine's outbox and
+/// record `acknowledge_mirror` back into it. Both shipper and component
+/// then hold clones of one `Arc`, so they see one engine.
 pub struct ComponentShipper {
-    engine: ComponentEngine,
+    engine: Arc<ComponentEngine>,
     client: MirrorTailnetClient,
     store_name: StoreName,
 }
 
 impl ComponentShipper {
+    /// Construct a shipper that OWNS its component engine, opened over a
+    /// mirror address. The engine is wrapped in a fresh `Arc`.
     pub fn new(
         engine: ComponentEngine,
         mirror_address: SocketAddr,
@@ -76,8 +91,32 @@ impl ComponentShipper {
         Self::with_client(engine, MirrorTailnetClient::new(mirror_address), store_name)
     }
 
+    /// Construct an engine-owning shipper over an explicit client. The
+    /// engine is wrapped in a fresh `Arc`.
     pub fn with_client(
         engine: ComponentEngine,
+        client: MirrorTailnetClient,
+        store_name: VersionedStoreName,
+    ) -> Self {
+        Self::with_shared_client(Arc::new(engine), client, store_name)
+    }
+
+    /// Construct a shipper that SHARES a component's already-`Arc`-held
+    /// engine, opened over a mirror address. The shipper holds a clone
+    /// of the same `Arc`, so writes the component appends become the
+    /// outbox this shipper ships, and `acknowledge_mirror` flows back
+    /// into the component's engine.
+    pub fn from_shared_engine(
+        engine: Arc<ComponentEngine>,
+        mirror_address: SocketAddr,
+        store_name: VersionedStoreName,
+    ) -> Self {
+        Self::with_shared_client(engine, MirrorTailnetClient::new(mirror_address), store_name)
+    }
+
+    /// Construct an engine-SHARING shipper over an explicit client.
+    pub fn with_shared_client(
+        engine: Arc<ComponentEngine>,
         client: MirrorTailnetClient,
         store_name: VersionedStoreName,
     ) -> Self {
@@ -88,8 +127,16 @@ impl ComponentShipper {
         }
     }
 
+    /// Borrow the component engine the shipper reads from and
+    /// acknowledges back into.
     pub fn engine(&self) -> &ComponentEngine {
         &self.engine
+    }
+
+    /// The shared `Arc` over the component engine, for callers that want
+    /// to hand the same engine to another holder.
+    pub fn shared_engine(&self) -> Arc<ComponentEngine> {
+        Arc::clone(&self.engine)
     }
 
     pub fn client(&self) -> MirrorTailnetClient {
