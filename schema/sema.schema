@@ -27,6 +27,9 @@
   CheckpointArtifact signal-mirror:lib:CheckpointArtifact
   AppendReceipt signal-mirror:lib:AppendReceipt
   CheckpointReceipt signal-mirror:lib:CheckpointReceipt
+  ObjectNotice signal-mirror:lib:ObjectNotice
+  ObjectNoticeReceipt signal-mirror:lib:ObjectNoticeReceipt
+  ObjectNoticeRejection signal-mirror:lib:ObjectNoticeRejection
   RestoreQuery signal-mirror:lib:RestoreQuery
   RestoreBundle signal-mirror:lib:RestoreBundle
   RestoreRejection signal-mirror:lib:RestoreRejection
@@ -45,9 +48,9 @@
 [WriteOutput ReadOutput]
 {
   WriteInput [(PersistSuffix NovelSuffix) (PersistCheckpoint CheckpointArtifact) (RegisterStore StoreRegistration) (RetireStore StoreRetirement) (PersistRetention RetentionOrder)]
-  ReadInput [(CheckAppend EntrySuffix) (CheckCheckpoint CheckpointArtifact) (LoadRestore RestoreQuery) (LoadHeads HeadQuery) (LoadRegistry RegistryQuery)]
+  ReadInput [(CheckAppend EntrySuffix) (CheckCheckpoint CheckpointArtifact) (CheckObjectNotice ObjectNotice) (LoadRestore RestoreQuery) (LoadHeads HeadQuery) (LoadRegistry RegistryQuery)]
   WriteOutput [(SuffixPersisted AppendReceipt) (CheckpointPersisted CheckpointReceipt) (StoreRegistered RegistrationReceipt) (StoreRetired RetirementReceipt) (RetentionPersisted RetentionReceipt) (WriteFaulted LedgerFault)]
-  ReadOutput [(AppendChecked CheckedAppend) (CheckpointChecked CheckedCheckpoint) (RestoreLoaded RestoreBundle) (RestoreRefused RestoreRejection) (HeadsLoaded HeadListing) (RegistryLoaded RegistryListing) (ReadFaulted LedgerFault)]
+  ReadOutput [(AppendChecked CheckedAppend) (CheckpointChecked CheckedCheckpoint) (ObjectNoticeChecked CheckedObjectNotice) (RestoreLoaded RestoreBundle) (RestoreRefused RestoreRejection) (HeadsLoaded HeadListing) (RegistryLoaded RegistryListing) (ReadFaulted LedgerFault)]
 
   ;; The validated novel subset of an append, decided by Nexus: entries
   ;; the ledger does not hold yet, plus the head the store advances to.
@@ -64,6 +67,7 @@
   StoreLedger [(Registered RegisteredLedger) Unregistered]
   CheckedAppend { request EntrySuffix ledger StoreLedger }
   CheckedCheckpoint { artifact CheckpointArtifact ledger StoreLedger }
+  CheckedObjectNotice { notice ObjectNotice ledger StoreLedger }
 
   LedgerFault { detail String }
 

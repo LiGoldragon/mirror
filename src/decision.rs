@@ -12,12 +12,14 @@
 
 use signal_mirror::{
     AppendReceipt, AppendRejection, AppendRejectionReason, EntryEnvelope, HeadMark,
-    PublishRejection, PublishRejectionReason,
+    ObjectNoticeReceipt, ObjectNoticeRejection, ObjectNoticeRejectionReason, PublishRejection,
+    PublishRejectionReason,
 };
 
-use crate::schema::nexus::{AppendDecision, CheckpointDecision};
+use crate::schema::nexus::{AppendDecision, CheckpointDecision, ObjectNoticeDecision};
 use crate::schema::sema::{
-    CheckedAppend, CheckedCheckpoint, KnownEntry, NovelSuffix, RegisteredLedger, StoreLedger,
+    CheckedAppend, CheckedCheckpoint, CheckedObjectNotice, KnownEntry, NovelSuffix,
+    RegisteredLedger, StoreLedger,
 };
 
 impl CheckedAppend {
@@ -234,5 +236,42 @@ impl CheckedCheckpoint {
                 CheckpointDecision::AcceptCheckpoint(artifact)
             }
         }
+    }
+}
+
+impl CheckedObjectNotice {
+    /// Decide whether a routed-object notice names history this mirror
+    /// already holds. The current receiver surface is intentionally a
+    /// notice/ack boundary: fetching missing history from `source` is a
+    /// later synchronization step, so an unknown or missing head is a
+    /// typed refusal rather than an implicit network fetch.
+    pub fn into_decision(self) -> ObjectNoticeDecision {
+        let Self { notice, ledger } = self;
+        let StoreLedger::Registered(ledger) = ledger else {
+            return ObjectNoticeDecision::RefuseObjectNotice(ObjectNoticeRejection {
+                store: notice.store,
+                reason: ObjectNoticeRejectionReason::UnknownStore,
+                head: None,
+            });
+        };
+        if ledger.has_known_head(&notice.head) {
+            return ObjectNoticeDecision::AcceptObjectNotice(ObjectNoticeReceipt {
+                store: notice.store,
+                head: notice.head,
+            });
+        }
+        ObjectNoticeDecision::RefuseObjectNotice(ObjectNoticeRejection {
+            store: notice.store,
+            reason: ObjectNoticeRejectionReason::HeadBehind,
+            head: ledger.head,
+        })
+    }
+}
+
+impl RegisteredLedger {
+    fn has_known_head(&self, head: &HeadMark) -> bool {
+        self.known
+            .iter()
+            .any(|known| known.sequence == head.sequence && known.digest == head.digest)
     }
 }

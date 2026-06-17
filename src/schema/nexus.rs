@@ -22,6 +22,10 @@ pub use signal_mirror::schema::lib::CheckpointArtifact as CheckpointArtifact;
 #[rustfmt::skip]
 pub use signal_mirror::schema::lib::CheckpointReceipt as CheckpointReceipt;
 #[rustfmt::skip]
+pub use signal_mirror::schema::lib::ObjectNoticeReceipt as ObjectNoticeReceipt;
+#[rustfmt::skip]
+pub use signal_mirror::schema::lib::ObjectNoticeRejection as ObjectNoticeRejection;
+#[rustfmt::skip]
 pub use signal_mirror::schema::lib::PublishRejection as PublishRejection;
 #[rustfmt::skip]
 pub use crate::schema::sema::WriteInput as SemaWriteInput;
@@ -108,6 +112,14 @@ pub enum CheckpointDecision {
     AcceptCheckpoint(CheckpointArtifact),
     AcknowledgeCheckpoint(CheckpointReceipt),
     RefuseCheckpoint(PublishRejection),
+}
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum ObjectNoticeDecision {
+    AcceptObjectNotice(ObjectNoticeReceipt),
+    RefuseObjectNotice(ObjectNoticeRejection),
 }
 
 #[rustfmt::skip]
@@ -318,6 +330,16 @@ impl CheckpointDecision {
 }
 
 #[rustfmt::skip]
+impl ObjectNoticeDecision {
+    pub fn accept_object_notice(payload: ObjectNoticeReceipt) -> Self {
+        Self::AcceptObjectNotice(payload)
+    }
+    pub fn refuse_object_notice(payload: ObjectNoticeRejection) -> Self {
+        Self::RefuseObjectNotice(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl Input {
     pub fn signal_arrived(payload: OrdinaryInput) -> Self {
         Self::SignalArrived(SignalArrived::new(payload))
@@ -434,6 +456,20 @@ impl From<CheckpointReceipt> for CheckpointDecision {
 impl From<PublishRejection> for CheckpointDecision {
     fn from(payload: PublishRejection) -> Self {
         Self::RefuseCheckpoint(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<ObjectNoticeReceipt> for ObjectNoticeDecision {
+    fn from(payload: ObjectNoticeReceipt) -> Self {
+        Self::AcceptObjectNotice(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<ObjectNoticeRejection> for ObjectNoticeDecision {
+    fn from(payload: ObjectNoticeRejection) -> Self {
+        Self::RefuseObjectNotice(payload)
     }
 }
 

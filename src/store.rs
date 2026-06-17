@@ -19,15 +19,15 @@ use sema_engine::{
 use signal_mirror::{
     AppendReceipt, ArtifactBytes, ArtifactDigest, CheckpointArtifact, CheckpointReceipt,
     CommitSequence, EntryDigest, EntryEnvelope, EntrySuffix, HeadListing, HeadMark, HeadQuery,
-    PayloadBytes, RestoreBundle, RestoreQuery, RestoreRejection, RestoreRejectionReason, StoreHead,
-    StoreName,
+    ObjectNotice, PayloadBytes, RestoreBundle, RestoreQuery, RestoreRejection,
+    RestoreRejectionReason, StoreHead, StoreName,
 };
 
 use crate::error::Result;
 use crate::schema::sema::{
-    Bytes, CheckedAppend, CheckedCheckpoint, DigestBytes, HeadStamp, KnownEntry, NovelSuffix,
-    ReceivedEntry, RecordFamily, RegisteredLedger, RetentionRule, RetentionSetting, StoreLedger,
-    StoredCheckpoint, StoredHead,
+    Bytes, CheckedAppend, CheckedCheckpoint, CheckedObjectNotice, DigestBytes, HeadStamp,
+    KnownEntry, NovelSuffix, ReceivedEntry, RecordFamily, RegisteredLedger, RetentionRule,
+    RetentionSetting, StoreLedger, StoredCheckpoint, StoredHead,
 };
 
 /// Key separator between a store name and an ordering suffix. Component
@@ -325,6 +325,16 @@ impl Store {
     pub fn check_checkpoint(&self, artifact: CheckpointArtifact) -> Result<CheckedCheckpoint> {
         let ledger = self.load_ledger(&artifact.store, None)?;
         Ok(CheckedCheckpoint { artifact, ledger })
+    }
+
+    /// Look up ledger state for a routed-object notice. The known range
+    /// is the announced head's exact sequence: accepting the notice means
+    /// this mirror already holds that content-addressed head, not merely
+    /// a higher sequence number with an unknown ancestry.
+    pub fn check_object_notice(&self, notice: ObjectNotice) -> Result<CheckedObjectNotice> {
+        let sequence = notice.head.sequence.clone().into_u64();
+        let ledger = self.load_ledger(&notice.store, Some((sequence, sequence)))?;
+        Ok(CheckedObjectNotice { notice, ledger })
     }
 
     /// Persist a validated novel suffix: every entry row in one commit,

@@ -20,6 +20,8 @@
   AppendRejection signal-mirror:lib:AppendRejection
   CheckpointArtifact signal-mirror:lib:CheckpointArtifact
   CheckpointReceipt signal-mirror:lib:CheckpointReceipt
+  ObjectNoticeReceipt signal-mirror:lib:ObjectNoticeReceipt
+  ObjectNoticeRejection signal-mirror:lib:ObjectNoticeRejection
   PublishRejection signal-mirror:lib:PublishRejection
   SemaWriteInput mirror:sema:WriteInput
   SemaWriteOutput mirror:sema:WriteOutput
@@ -49,4 +51,9 @@
   ;; The checkpoint decision: registration and coverage-monotonicity
   ;; validation, with idempotent re-publish acknowledgement.
   CheckpointDecision [(AcceptCheckpoint CheckpointArtifact) (AcknowledgeCheckpoint CheckpointReceipt) (RefuseCheckpoint PublishRejection)]
+
+  ;; The routed-object notice decision: the mirror accepts a notice only
+  ;; when its ledger already holds the announced head, otherwise the
+  ;; source must ship the missing log entries before the notice is useful.
+  ObjectNoticeDecision [(AcceptObjectNotice ObjectNoticeReceipt) (RefuseObjectNotice ObjectNoticeRejection)]
 }

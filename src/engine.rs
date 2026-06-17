@@ -25,6 +25,7 @@ use crate::config::Configuration;
 use crate::error::Result;
 use crate::schema::nexus::{
     self as nexus_schema, AppendDecision, CheckpointDecision, NexusAction, NexusEngine, NexusWork,
+    ObjectNoticeDecision,
 };
 use crate::schema::sema::{
     self as sema_schema, LedgerFault, ReadInput, ReadOutput, SemaEngine, WriteInput, WriteOutput,
@@ -241,6 +242,9 @@ impl Engine {
             signal_mirror::Input::PublishCheckpoint(artifact) => {
                 NexusAction::command_sema_read(ReadInput::CheckCheckpoint(artifact))
             }
+            signal_mirror::Input::NotifyObject(notice) => {
+                NexusAction::command_sema_read(ReadInput::CheckObjectNotice(notice))
+            }
             signal_mirror::Input::Restore(query) => {
                 NexusAction::command_sema_read(ReadInput::LoadRestore(query))
             }
@@ -274,6 +278,14 @@ impl Engine {
                 }
                 CheckpointDecision::RefuseCheckpoint(rejection) => {
                     NexusAction::reply_to_signal(Output::PublishRejected(rejection))
+                }
+            },
+            ReadOutput::ObjectNoticeChecked(checked) => match checked.into_decision() {
+                ObjectNoticeDecision::AcceptObjectNotice(receipt) => {
+                    NexusAction::reply_to_signal(Output::ObjectNoticeAccepted(receipt))
+                }
+                ObjectNoticeDecision::RefuseObjectNotice(rejection) => {
+                    NexusAction::reply_to_signal(Output::ObjectNoticeRejected(rejection))
                 }
             },
             ReadOutput::RestoreLoaded(bundle) => {
@@ -466,6 +478,11 @@ impl SemaEngine for Engine {
                 .store
                 .check_checkpoint(artifact)
                 .map(ReadOutput::CheckpointChecked)
+                .unwrap_or_else(ReadOutput::from_fault),
+            ReadInput::CheckObjectNotice(notice) => self
+                .store
+                .check_object_notice(notice)
+                .map(ReadOutput::ObjectNoticeChecked)
                 .unwrap_or_else(ReadOutput::from_fault),
             ReadInput::LoadRestore(query) => match self.store.load_restore(&query) {
                 Ok(Ok(bundle)) => ReadOutput::RestoreLoaded(bundle),

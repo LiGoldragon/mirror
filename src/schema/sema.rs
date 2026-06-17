@@ -82,6 +82,12 @@ pub use signal_mirror::schema::lib::AppendReceipt as AppendReceipt;
 #[rustfmt::skip]
 pub use signal_mirror::schema::lib::CheckpointReceipt as CheckpointReceipt;
 #[rustfmt::skip]
+pub use signal_mirror::schema::lib::ObjectNotice as ObjectNotice;
+#[rustfmt::skip]
+pub use signal_mirror::schema::lib::ObjectNoticeReceipt as ObjectNoticeReceipt;
+#[rustfmt::skip]
+pub use signal_mirror::schema::lib::ObjectNoticeRejection as ObjectNoticeRejection;
+#[rustfmt::skip]
 pub use signal_mirror::schema::lib::RestoreQuery as RestoreQuery;
 #[rustfmt::skip]
 pub use signal_mirror::schema::lib::RestoreBundle as RestoreBundle;
@@ -129,6 +135,7 @@ pub enum WriteInput {
 pub enum ReadInput {
     CheckAppend(EntrySuffix),
     CheckCheckpoint(CheckpointArtifact),
+    CheckObjectNotice(ObjectNotice),
     LoadRestore(RestoreQuery),
     LoadHeads(HeadQuery),
     LoadRegistry(RegistryQuery),
@@ -152,6 +159,7 @@ pub enum WriteOutput {
 pub enum ReadOutput {
     AppendChecked(CheckedAppend),
     CheckpointChecked(CheckedCheckpoint),
+    ObjectNoticeChecked(CheckedObjectNotice),
     RestoreLoaded(RestoreBundle),
     RestoreRefused(RestoreRejection),
     HeadsLoaded(HeadListing),
@@ -206,6 +214,14 @@ pub struct CheckedAppend {
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct CheckedCheckpoint {
     pub artifact: CheckpointArtifact,
+    pub ledger: StoreLedger,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct CheckedObjectNotice {
+    pub notice: ObjectNotice,
     pub ledger: StoreLedger,
 }
 
@@ -378,6 +394,9 @@ impl ReadInput {
     pub fn check_checkpoint(payload: CheckpointArtifact) -> Self {
         Self::CheckCheckpoint(payload)
     }
+    pub fn check_object_notice(payload: ObjectNotice) -> Self {
+        Self::CheckObjectNotice(payload)
+    }
     pub fn load_restore(payload: RestoreQuery) -> Self {
         Self::LoadRestore(payload)
     }
@@ -418,6 +437,9 @@ impl ReadOutput {
     }
     pub fn checkpoint_checked(payload: CheckedCheckpoint) -> Self {
         Self::CheckpointChecked(payload)
+    }
+    pub fn object_notice_checked(payload: CheckedObjectNotice) -> Self {
+        Self::ObjectNoticeChecked(payload)
     }
     pub fn restore_loaded(payload: RestoreBundle) -> Self {
         Self::RestoreLoaded(payload)
@@ -520,6 +542,13 @@ impl From<CheckpointArtifact> for ReadInput {
 }
 
 #[rustfmt::skip]
+impl From<ObjectNotice> for ReadInput {
+    fn from(payload: ObjectNotice) -> Self {
+        Self::CheckObjectNotice(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl From<RestoreQuery> for ReadInput {
     fn from(payload: RestoreQuery) -> Self {
         Self::LoadRestore(payload)
@@ -593,6 +622,13 @@ impl From<CheckedAppend> for ReadOutput {
 impl From<CheckedCheckpoint> for ReadOutput {
     fn from(payload: CheckedCheckpoint) -> Self {
         Self::CheckpointChecked(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl From<CheckedObjectNotice> for ReadOutput {
+    fn from(payload: CheckedObjectNotice) -> Self {
+        Self::ObjectNoticeChecked(payload)
     }
 }
 
@@ -941,6 +977,7 @@ impl WriteInput {
 pub enum ReadInputRoute {
     CheckAppend,
     CheckCheckpoint,
+    CheckObjectNotice,
     LoadRestore,
     LoadHeads,
     LoadRegistry,
@@ -952,6 +989,7 @@ impl ReadInput {
         match self {
             Self::CheckAppend(_) => ReadInputRoute::CheckAppend,
             Self::CheckCheckpoint(_) => ReadInputRoute::CheckCheckpoint,
+            Self::CheckObjectNotice(_) => ReadInputRoute::CheckObjectNotice,
             Self::LoadRestore(_) => ReadInputRoute::LoadRestore,
             Self::LoadHeads(_) => ReadInputRoute::LoadHeads,
             Self::LoadRegistry(_) => ReadInputRoute::LoadRegistry,
@@ -1009,6 +1047,7 @@ impl WriteOutput {
 pub enum ReadOutputRoute {
     AppendChecked,
     CheckpointChecked,
+    ObjectNoticeChecked,
     RestoreLoaded,
     RestoreRefused,
     HeadsLoaded,
@@ -1022,6 +1061,7 @@ impl ReadOutput {
         match self {
             Self::AppendChecked(_) => ReadOutputRoute::AppendChecked,
             Self::CheckpointChecked(_) => ReadOutputRoute::CheckpointChecked,
+            Self::ObjectNoticeChecked(_) => ReadOutputRoute::ObjectNoticeChecked,
             Self::RestoreLoaded(_) => ReadOutputRoute::RestoreLoaded,
             Self::RestoreRefused(_) => ReadOutputRoute::RestoreRefused,
             Self::HeadsLoaded(_) => ReadOutputRoute::HeadsLoaded,
@@ -1072,6 +1112,7 @@ impl SemaObjectName {
                 match route {
                     ReadInputRoute::CheckAppend => "SemaReadInputCheckAppend",
                     ReadInputRoute::CheckCheckpoint => "SemaReadInputCheckCheckpoint",
+                    ReadInputRoute::CheckObjectNotice => "SemaReadInputCheckObjectNotice",
                     ReadInputRoute::LoadRestore => "SemaReadInputLoadRestore",
                     ReadInputRoute::LoadHeads => "SemaReadInputLoadHeads",
                     ReadInputRoute::LoadRegistry => "SemaReadInputLoadRegistry",
@@ -1096,6 +1137,9 @@ impl SemaObjectName {
                     ReadOutputRoute::AppendChecked => "SemaReadOutputAppendChecked",
                     ReadOutputRoute::CheckpointChecked => {
                         "SemaReadOutputCheckpointChecked"
+                    }
+                    ReadOutputRoute::ObjectNoticeChecked => {
+                        "SemaReadOutputObjectNoticeChecked"
                     }
                     ReadOutputRoute::RestoreLoaded => "SemaReadOutputRestoreLoaded",
                     ReadOutputRoute::RestoreRefused => "SemaReadOutputRestoreRefused",

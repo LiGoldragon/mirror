@@ -13,8 +13,8 @@ use mirror::{Engine, Store};
 use signal_mirror::{
     AppendRejectionReason, ArtifactBytes, ArtifactDigest, Bytes, CheckpointArtifact,
     CheckpointSequence, CommitSequence, EntryDigest, EntryEnvelope, EntrySuffix, FixedBytes,
-    HeadMark, HeadQuery, Input, Output, PayloadBytes, RestoreQuery, RestoreRejectionReason,
-    StoreName,
+    HeadMark, HeadQuery, Input, ObjectNotice, ObjectNoticeRejectionReason, Output, PayloadBytes,
+    RestoreQuery, RestoreRejectionReason, StoreName,
 };
 
 struct Fixture {
@@ -82,6 +82,14 @@ fn append(store_name: &str, expected: Option<HeadMark>, entries: Vec<EntryEnvelo
         store: store(store_name),
         expected_head: expected,
         entries,
+    })
+}
+
+fn object_notice(store_name: &str, announced: HeadMark) -> Input {
+    Input::NotifyObject(ObjectNotice {
+        store: store(store_name),
+        head: announced,
+        source: None,
     })
 }
 
@@ -419,6 +427,59 @@ async fn retire_then_reregister_resumes_the_surviving_chain() {
     match appended {
         Output::Appended(receipt) => assert_eq!(receipt.head, head(3, 0x33)),
         other => panic!("expected Appended after resume, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn object_notice_for_unregistered_store_is_rejected_typed() {
+    let mut fixture = Fixture::new();
+    let reply = fixture.handle(object_notice("ghost", head(1, 0x11))).await;
+    match reply {
+        Output::ObjectNoticeRejected(rejection) => {
+            assert_eq!(rejection.reason, ObjectNoticeRejectionReason::UnknownStore);
+            assert_eq!(rejection.head, None);
+        }
+        other => panic!("expected ObjectNoticeRejected, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn object_notice_for_known_head_is_accepted() {
+    let mut fixture = Fixture::with_registered("spirit");
+    let appended = fixture
+        .handle(append(
+            "spirit",
+            None,
+            vec![envelope(1, None, 0x11), envelope(2, Some(0x11), 0x22)],
+        ))
+        .await;
+    assert!(matches!(appended, Output::Appended(_)));
+
+    let reply = fixture.handle(object_notice("spirit", head(2, 0x22))).await;
+    match reply {
+        Output::ObjectNoticeAccepted(receipt) => {
+            assert_eq!(receipt.store, store("spirit"));
+            assert_eq!(receipt.head, head(2, 0x22));
+        }
+        other => panic!("expected ObjectNoticeAccepted, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn object_notice_for_missing_head_reports_current_head() {
+    let mut fixture = Fixture::with_registered("spirit");
+    let appended = fixture
+        .handle(append("spirit", None, vec![envelope(1, None, 0x11)]))
+        .await;
+    assert!(matches!(appended, Output::Appended(_)));
+
+    let reply = fixture.handle(object_notice("spirit", head(2, 0x22))).await;
+    match reply {
+        Output::ObjectNoticeRejected(rejection) => {
+            assert_eq!(rejection.reason, ObjectNoticeRejectionReason::HeadBehind);
+            assert_eq!(rejection.head, Some(head(1, 0x11)));
+        }
+        other => panic!("expected ObjectNoticeRejected, got {other:?}"),
     }
 }
 
