@@ -148,13 +148,13 @@ impl ComponentShipper {
     }
 
     pub fn envelope_for_entry(&self, entry: &VersionedCommitLogEntry) -> Result<EntryEnvelope> {
-        Ok(EntryEnvelope {
-            sequence: CommitSequence::new(entry.commit_sequence().value()),
-            previous_digest: entry
+        Ok(EntryEnvelope::new(
+            CommitSequence::new(entry.commit_sequence().value()),
+            entry
                 .previous_entry_digest()
                 .map(|digest| EntryDigest::new(FixedBytes::new(*digest.bytes()))),
-            digest: EntryDigest::new(FixedBytes::new(*entry.entry_digest().bytes())),
-            payload: PayloadBytes::new(Bytes::new(
+            EntryDigest::new(FixedBytes::new(*entry.entry_digest().bytes())),
+            PayloadBytes::new(Bytes::new(
                 rkyv::to_bytes::<rkyv::rancor::Error>(entry)
                     .map_err(|source| Error::PayloadEncode {
                         surface: "versioned entry",
@@ -162,7 +162,7 @@ impl ComponentShipper {
                     })?
                     .to_vec(),
             )),
-        })
+        ))
     }
 
     pub fn expected_head(&self) -> Result<Option<HeadMark>> {
@@ -194,18 +194,18 @@ impl ComponentShipper {
 
         let output = self
             .client
-            .exchange(Input::Append(EntrySuffix {
-                store: self.store_name.clone(),
-                expected_head: self.expected_head()?,
+            .exchange(Input::Append(EntrySuffix::from_entries(
+                self.store_name.clone(),
+                self.expected_head()?,
                 entries,
-            }))
+            )))
             .await?;
         let receipt = match output {
             Output::Appended(receipt) => receipt,
             Output::AppendRejected(rejection) => {
                 return Err(Error::MirrorAppendRejected {
                     reason: rejection.reason,
-                    head: rejection.head,
+                    head: rejection.head().cloned(),
                 });
             }
             Output::MirrorFaulted(report) => {

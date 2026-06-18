@@ -369,7 +369,7 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 [[package]]
 name = "meta-signal-mirror"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=main#aa00815244552ed98c87915a796766d0ab96a5ea"
+source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=main#872af53b5ec1dd93a5f66d22272d699ed0c2b85b"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -596,7 +596,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 [[package]]
 name = "schema-cc"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#abae95f999c09491c706f39b6fdef48a3530b7f1"
+source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#1de72dde6241b15299cd37fe096b3ef0e2f618b6"
 dependencies = [
  "nota-next",
  "prettyplease",
@@ -609,7 +609,7 @@ dependencies = [
 [[package]]
 name = "schema-next"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#abae95f999c09491c706f39b6fdef48a3530b7f1"
+source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#1de72dde6241b15299cd37fe096b3ef0e2f618b6"
 dependencies = [
  "blake3",
  "nota-next",
@@ -734,7 +734,7 @@ dependencies = [
 [[package]]
 name = "signal-mirror"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-mirror.git?branch=main#24ee1949fdd3487317590136054dfd846a6a80b2"
+source = "git+https://github.com/LiGoldragon/signal-mirror.git?branch=main#4ecfa050077115fade9127b5048dc7e23c32a2d0"
 dependencies = [
  "nota-next",
  "rkyv",

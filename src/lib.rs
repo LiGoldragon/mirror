@@ -26,10 +26,13 @@ pub mod shipper;
 pub mod store;
 
 pub mod schema {
+    #[allow(dead_code, private_interfaces)]
     #[rustfmt::skip]
     pub mod nexus;
+    #[allow(dead_code, private_interfaces)]
     #[rustfmt::skip]
     pub mod sema;
+    #[allow(dead_code, private_interfaces)]
     #[rustfmt::skip]
     pub mod daemon;
 }

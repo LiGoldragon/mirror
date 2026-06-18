@@ -25,9 +25,10 @@ use signal_mirror::{
 
 use crate::error::Result;
 use crate::schema::sema::{
-    Bytes, CheckedAppend, CheckedCheckpoint, CheckedObjectNotice, DigestBytes, HeadStamp,
-    KnownEntry, NovelSuffix, ReceivedEntry, RecordFamily, RegisteredLedger, RetentionRule,
-    RetentionSetting, StoreLedger, StoredCheckpoint, StoredHead,
+    Bytes, CheckedAppend, CheckedCheckpoint, CheckedObjectNotice, DigestBytes, Entries, HeadStamp,
+    KnownEntries, KnownEntry, LatestCheckpoint, LedgerHead, NovelSuffix, PreviousDigest,
+    ReceivedEntry, RecordFamily, RegisteredLedger, RetentionRule, RetentionSetting, Scope,
+    StoreLedger, StoredCheckpoint, StoredHead, StoredHeadStamp,
 };
 
 /// Key separator between a store name and an ordering suffix. Component
@@ -71,10 +72,63 @@ impl EngineRecord for StoredCheckpoint {
 
 impl EngineRecord for RetentionSetting {
     fn record_key(&self) -> RecordKey {
-        match &self.scope {
+        match self.scope.payload() {
             Some(store) => RecordKey::new(format!("store{KEY_SEPARATOR}{store}")),
             None => RecordKey::new("all-stores".to_owned()),
         }
+    }
+}
+
+impl NovelSuffix {
+    pub fn new(store: StoreName, head: HeadMark, entries: Vec<EntryEnvelope>) -> Self {
+        Self {
+            store,
+            head,
+            entries: Entries::new(entries),
+        }
+    }
+
+    pub fn entries(&self) -> &[EntryEnvelope] {
+        self.entries.payload()
+    }
+}
+
+impl RegisteredLedger {
+    pub fn new(
+        head: Option<HeadMark>,
+        known: Vec<KnownEntry>,
+        latest_checkpoint: Option<CheckpointReceipt>,
+    ) -> Self {
+        Self {
+            ledger_head: LedgerHead::new(head),
+            known_entries: KnownEntries::new(known),
+            latest_checkpoint: LatestCheckpoint::new(latest_checkpoint),
+        }
+    }
+
+    pub fn head(&self) -> Option<&HeadMark> {
+        self.ledger_head.payload().as_ref()
+    }
+
+    pub fn known(&self) -> &[KnownEntry] {
+        self.known_entries.payload()
+    }
+
+    pub fn latest_checkpoint(&self) -> Option<&CheckpointReceipt> {
+        self.latest_checkpoint.payload().as_ref()
+    }
+}
+
+impl StoredHead {
+    pub fn new(store: String, head: Option<HeadStamp>) -> Self {
+        Self {
+            store,
+            stored_head_stamp: StoredHeadStamp::new(head),
+        }
+    }
+
+    pub fn head(&self) -> Option<&HeadStamp> {
+        self.stored_head_stamp.payload().as_ref()
     }
 }
 
@@ -117,25 +171,27 @@ impl ReceivedEntry {
         Self {
             store: store.as_str().to_owned(),
             sequence: envelope.sequence.clone().into_u64(),
-            previous_digest: envelope
-                .previous_digest
-                .as_ref()
-                .map(DigestBytes::from_entry_digest),
+            previous_digest: PreviousDigest::new(
+                envelope
+                    .previous_digest()
+                    .map(DigestBytes::from_entry_digest),
+            ),
             digest: DigestBytes::from_entry_digest(&envelope.digest),
             payload: Bytes::new(envelope.payload.as_slice().to_vec()),
         }
     }
 
     pub fn to_envelope(&self) -> EntryEnvelope {
-        EntryEnvelope {
-            sequence: CommitSequence::new(self.sequence),
-            previous_digest: self
-                .previous_digest
-                .as_ref()
-                .map(DigestBytes::to_entry_digest),
-            digest: self.digest.to_entry_digest(),
-            payload: PayloadBytes::new(signal_mirror::Bytes::new(self.payload.payload().to_vec())),
-        }
+        EntryEnvelope::new(
+            CommitSequence::new(self.sequence),
+            self.previous_digest().map(DigestBytes::to_entry_digest),
+            self.digest.to_entry_digest(),
+            PayloadBytes::new(signal_mirror::Bytes::new(self.payload.payload().to_vec())),
+        )
+    }
+
+    pub fn previous_digest(&self) -> Option<&DigestBytes> {
+        self.previous_digest.payload().as_ref()
     }
 
     pub fn to_known_entry(&self) -> KnownEntry {
@@ -188,10 +244,10 @@ impl StoredCheckpoint {
 impl RetentionSetting {
     pub fn from_order(order: &meta_signal_mirror::RetentionOrder) -> Self {
         Self {
-            scope: match &order.scope {
+            scope: Scope::new(match &order.scope {
                 meta_signal_mirror::RetentionScope::Store(store) => Some(store.as_str().to_owned()),
                 meta_signal_mirror::RetentionScope::AllStores => None,
-            },
+            }),
             rule: match &order.rule {
                 meta_signal_mirror::RetentionRule::KeepEverything => RetentionRule::KeepEverything,
                 meta_signal_mirror::RetentionRule::KeepLatestCheckpoints(count) => {
@@ -294,24 +350,23 @@ impl Store {
                 .collect(),
             None => Vec::new(),
         };
-        Ok(StoreLedger::Registered(RegisteredLedger {
-            head: head_row.head.as_ref().map(HeadStamp::to_mark),
+        Ok(StoreLedger::Registered(RegisteredLedger::new(
+            head_row.head().map(HeadStamp::to_mark),
             known,
-            latest_checkpoint: self
-                .latest_checkpoint_row(store)?
+            self.latest_checkpoint_row(store)?
                 .as_ref()
                 .map(StoredCheckpoint::to_receipt),
-        }))
+        )))
     }
 
     /// Look up ledger state for a pending append. The known range covers
     /// the suffix plus the entry just before it, so the decision can
     /// verify the expected head against stored digests.
     pub fn check_append(&self, request: EntrySuffix) -> Result<CheckedAppend> {
-        let range = request.entries.first().map(|first| {
+        let range = request.entries().first().map(|first| {
             let first_sequence = first.sequence.clone().into_u64();
             let last_sequence = request
-                .entries
+                .entries()
                 .last()
                 .map(|entry| entry.sequence.clone().into_u64())
                 .unwrap_or(first_sequence);
@@ -346,7 +401,7 @@ impl Store {
     /// entry transaction is skipped (sema-engine rejects empty commits)
     /// and only the head re-advances (see ARCHITECTURE.md).
     pub fn persist_suffix(&mut self, suffix: &NovelSuffix) -> Result<AppendReceipt> {
-        if !suffix.entries.is_empty() {
+        if !suffix.entries().is_empty() {
             self.commit_entry_rows(suffix)?;
         }
         self.advance_head(suffix)
@@ -359,7 +414,7 @@ impl Store {
     /// leaves behind.
     pub fn commit_entry_rows(&mut self, suffix: &NovelSuffix) -> Result<()> {
         let mut commit = CommitRequest::new(self.entries);
-        for envelope in &suffix.entries {
+        for envelope in suffix.entries() {
             commit = commit.assert(ReceivedEntry::from_envelope(&suffix.store, envelope));
         }
         self.engine.commit(commit)?;
@@ -371,10 +426,10 @@ impl Store {
     pub fn advance_head(&mut self, suffix: &NovelSuffix) -> Result<AppendReceipt> {
         self.engine.mutate(Mutation::new(
             self.heads,
-            StoredHead {
-                store: suffix.store.as_str().to_owned(),
-                head: Some(HeadStamp::from_mark(&suffix.head)),
-            },
+            StoredHead::new(
+                suffix.store.as_str().to_owned(),
+                Some(HeadStamp::from_mark(&suffix.head)),
+            ),
         ))?;
         Ok(AppendReceipt {
             store: suffix.store.clone(),
@@ -415,10 +470,10 @@ impl Store {
         ))?;
         self.engine.assert(Assertion::new(
             self.heads,
-            StoredHead {
-                store: store.as_str().to_owned(),
-                head: surviving.last().map(ReceivedEntry::to_head_stamp),
-            },
+            StoredHead::new(
+                store.as_str().to_owned(),
+                surviving.last().map(ReceivedEntry::to_head_stamp),
+            ),
         ))?;
         Ok(())
     }
@@ -469,7 +524,7 @@ impl Store {
                 reason: RestoreRejectionReason::NoCheckpoint,
             }));
         };
-        let suffix = self
+        let suffix: Vec<EntryEnvelope> = self
             .entry_rows(KeyRange::between(
                 Self::sequence_key(store, checkpoint_row.covered_end + 1),
                 Self::sequence_key(store, u64::MAX),
@@ -477,11 +532,11 @@ impl Store {
             .iter()
             .map(ReceivedEntry::to_envelope)
             .collect();
-        Ok(Ok(RestoreBundle {
-            store: store.clone(),
-            checkpoint: checkpoint_row.to_artifact(),
+        Ok(Ok(RestoreBundle::from_suffix(
+            store.clone(),
+            checkpoint_row.to_artifact(),
             suffix,
-        }))
+        )))
     }
 
     /// Observe store heads: one store or every registered store.
@@ -494,11 +549,13 @@ impl Store {
                 .records()
                 .to_vec(),
         };
-        Ok(HeadListing::new(
+        Ok(HeadListing::from_heads(
             rows.iter()
-                .map(|row| StoreHead {
-                    store: StoreName::new(row.store.clone()),
-                    head: row.head.as_ref().map(HeadStamp::to_mark),
+                .map(|row| {
+                    StoreHead::new(
+                        StoreName::new(row.store.clone()),
+                        row.head().map(HeadStamp::to_mark),
+                    )
                 })
                 .collect(),
         ))

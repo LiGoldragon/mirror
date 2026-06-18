@@ -27,40 +27,35 @@ impl CheckedAppend {
     pub fn into_decision(self) -> AppendDecision {
         let Self { request, ledger } = self;
         let StoreLedger::Registered(ledger) = ledger else {
-            return AppendDecision::RefuseAppend(AppendRejection {
-                store: request.store,
-                reason: AppendRejectionReason::UnknownStore,
-                head: None,
-            });
+            return AppendDecision::RefuseAppend(AppendRejection::new(
+                request.store,
+                AppendRejectionReason::UnknownStore,
+                None,
+            ));
         };
         let refuse = |reason: AppendRejectionReason,
                       store: signal_mirror::StoreName,
                       head: Option<HeadMark>| {
-            AppendDecision::RefuseAppend(AppendRejection {
-                store,
-                reason,
-                head,
-            })
+            AppendDecision::RefuseAppend(AppendRejection::new(store, reason, head))
         };
-        if request.entries.is_empty() {
+        let entries = request.entries().to_vec();
+        if entries.is_empty() {
             return refuse(
                 AppendRejectionReason::EmptySuffix,
                 request.store,
-                ledger.head,
+                ledger.head().cloned(),
             );
         }
-        if let Some(reason) = ledger.suffix_inconsistency(&request.entries) {
-            return refuse(reason, request.store, ledger.head);
+        if let Some(reason) = ledger.suffix_inconsistency(&entries) {
+            return refuse(reason, request.store, ledger.head().cloned());
         }
-        if let Some(reason) =
-            ledger.expected_head_violation(request.expected_head.as_ref(), &request.entries)
-        {
-            return refuse(reason, request.store, ledger.head);
+        if let Some(reason) = ledger.expected_head_violation(request.expected_head(), &entries) {
+            return refuse(reason, request.store, ledger.head().cloned());
         }
-        if let Some(reason) = ledger.known_divergence(&request.entries) {
-            return refuse(reason, request.store, ledger.head);
+        if let Some(reason) = ledger.known_divergence(&entries) {
+            return refuse(reason, request.store, ledger.head().cloned());
         }
-        let Some(suffix_end) = request.entries.last().map(|entry| HeadMark {
+        let Some(suffix_end) = entries.last().map(|entry| HeadMark {
             sequence: entry.sequence.clone(),
             digest: entry.digest.clone(),
         }) else {
@@ -68,7 +63,7 @@ impl CheckedAppend {
             return refuse(
                 AppendRejectionReason::EmptySuffix,
                 request.store,
-                ledger.head,
+                ledger.head().cloned(),
             );
         };
         // The novel remainder is computed against the LOADED KNOWN ROWS,
@@ -76,8 +71,7 @@ impl CheckedAppend {
         // and the head advance leaves rows ABOVE the head, and the
         // shipper's re-send must dedup against them (digest-verified by
         // known_divergence above) instead of re-asserting and faulting.
-        let novel: Vec<EntryEnvelope> = request
-            .entries
+        let novel: Vec<EntryEnvelope> = entries
             .into_iter()
             .filter(|entry| {
                 ledger
@@ -91,7 +85,7 @@ impl CheckedAppend {
             // head, no rewrite. A headless ledger cannot hold such a
             // re-send; refuse rather than panic if the state is
             // inconsistent.
-            let Some(head) = ledger.head else {
+            let Some(head) = ledger.head().cloned() else {
                 return refuse(AppendRejectionReason::SequenceGap, request.store, None);
             };
             return AppendDecision::AcknowledgeDuplicate(AppendReceipt {
@@ -103,24 +97,19 @@ impl CheckedAppend {
         // remainder whose suffix end lies above the head is the healed
         // crash window: a head-only re-advance (`Store::persist_suffix`
         // skips the empty entry transaction).
-        AppendDecision::AcceptSuffix(NovelSuffix {
-            store: request.store,
-            head: suffix_end,
-            entries: novel,
-        })
+        AppendDecision::AcceptSuffix(NovelSuffix::new(request.store, suffix_end, novel))
     }
 }
 
 impl RegisteredLedger {
     fn head_sequence(&self) -> u64 {
-        self.head
-            .as_ref()
+        self.head()
             .map(|head| head.sequence.clone().into_u64())
             .unwrap_or(0)
     }
 
     fn known_digest(&self, sequence: u64) -> Option<&KnownEntry> {
-        self.known
+        self.known()
             .iter()
             .find(|entry| entry.sequence.clone().into_u64() == sequence)
     }
@@ -133,7 +122,7 @@ impl RegisteredLedger {
             if next.sequence.clone().into_u64() != previous.sequence.clone().into_u64() + 1 {
                 return Some(AppendRejectionReason::SequenceGap);
             }
-            if next.previous_digest.as_ref() != Some(&previous.digest) {
+            if next.previous_digest() != Some(&previous.digest) {
                 return Some(AppendRejectionReason::HeadForked);
             }
         }
@@ -152,7 +141,7 @@ impl RegisteredLedger {
         let first_sequence = first.sequence.clone().into_u64();
         match expected {
             None => {
-                if first_sequence != 1 || first.previous_digest.is_some() {
+                if first_sequence != 1 || first.previous_digest().is_some() {
                     return Some(AppendRejectionReason::SequenceGap);
                 }
             }
@@ -161,7 +150,7 @@ impl RegisteredLedger {
                 if mark_sequence + 1 != first_sequence {
                     return Some(AppendRejectionReason::SequenceGap);
                 }
-                if first.previous_digest.as_ref() != Some(&mark.digest) {
+                if first.previous_digest() != Some(&mark.digest) {
                     return Some(AppendRejectionReason::DigestMismatch);
                 }
                 // The mark must name a STORED row — the loaded known
@@ -214,7 +203,7 @@ impl CheckedCheckpoint {
                 reason: PublishRejectionReason::UnknownStore,
             });
         };
-        match &ledger.latest_checkpoint {
+        match ledger.latest_checkpoint() {
             None => CheckpointDecision::AcceptCheckpoint(artifact),
             Some(latest) => {
                 let latest_sequence = latest.sequence.clone().into_u64();
@@ -248,11 +237,11 @@ impl CheckedObjectNotice {
     pub fn into_decision(self) -> ObjectNoticeDecision {
         let Self { notice, ledger } = self;
         let StoreLedger::Registered(ledger) = ledger else {
-            return ObjectNoticeDecision::RefuseObjectNotice(ObjectNoticeRejection {
-                store: notice.store,
-                reason: ObjectNoticeRejectionReason::UnknownStore,
-                head: None,
-            });
+            return ObjectNoticeDecision::RefuseObjectNotice(ObjectNoticeRejection::new(
+                notice.store,
+                ObjectNoticeRejectionReason::UnknownStore,
+                None,
+            ));
         };
         if ledger.has_known_head(&notice.head) {
             return ObjectNoticeDecision::AcceptObjectNotice(ObjectNoticeReceipt {
@@ -260,17 +249,17 @@ impl CheckedObjectNotice {
                 head: notice.head,
             });
         }
-        ObjectNoticeDecision::RefuseObjectNotice(ObjectNoticeRejection {
-            store: notice.store,
-            reason: ObjectNoticeRejectionReason::HeadBehind,
-            head: ledger.head,
-        })
+        ObjectNoticeDecision::RefuseObjectNotice(ObjectNoticeRejection::new(
+            notice.store,
+            ObjectNoticeRejectionReason::HeadBehind,
+            ledger.head().cloned(),
+        ))
     }
 }
 
 impl RegisteredLedger {
     fn has_known_head(&self, head: &HeadMark) -> bool {
-        self.known
+        self.known()
             .iter()
             .any(|known| known.sequence == head.sequence && known.digest == head.digest)
     }

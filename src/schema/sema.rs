@@ -170,10 +170,15 @@ pub enum ReadOutput {
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Entries(Vec<EntryEnvelope>);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct NovelSuffix {
     pub store: StoreName,
     pub head: HeadMark,
-    pub entries: Vec<EntryEnvelope>,
+    pub(crate) entries: Entries,
 }
 
 #[rustfmt::skip]
@@ -187,10 +192,25 @@ pub struct KnownEntry {
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct LedgerHead(Option<HeadMark>);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct KnownEntries(Vec<KnownEntry>);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct LatestCheckpoint(Option<CheckpointReceipt>);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct RegisteredLedger {
-    pub head: Option<HeadMark>,
-    pub known: Vec<KnownEntry>,
-    pub latest_checkpoint: Option<CheckpointReceipt>,
+    pub(crate) ledger_head: LedgerHead,
+    pub(crate) known_entries: KnownEntries,
+    pub(crate) latest_checkpoint: LatestCheckpoint,
 }
 
 #[rustfmt::skip]
@@ -246,10 +266,20 @@ pub struct HeadStamp {
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct StoredHeadStamp(Option<HeadStamp>);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct StoredHead {
     pub store: String,
-    pub head: Option<HeadStamp>,
+    pub(crate) stored_head_stamp: StoredHeadStamp,
 }
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PreviousDigest(Option<DigestBytes>);
 
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
@@ -257,7 +287,7 @@ pub struct StoredHead {
 pub struct ReceivedEntry {
     pub store: String,
     pub sequence: Integer,
-    pub previous_digest: Option<DigestBytes>,
+    pub(crate) previous_digest: PreviousDigest,
     pub digest: DigestBytes,
     pub payload: Bytes,
 }
@@ -289,8 +319,13 @@ pub enum RetentionRule {
 #[rustfmt::skip]
 #[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Scope(Option<String>);
+
+#[rustfmt::skip]
+#[cfg_attr(feature = "nota-text", derive(nota_next::NotaDecode, nota_next::NotaEncode))]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct RetentionSetting {
-    pub scope: Option<String>,
+    pub(crate) scope: Scope,
     pub rule: RetentionRule,
 }
 
@@ -308,6 +343,82 @@ pub enum Input {
 pub enum Output {
     WriteOutput(WriteOutput),
     ReadOutput(ReadOutput),
+}
+
+#[rustfmt::skip]
+impl Entries {
+    pub fn new(payload: Vec<EntryEnvelope>) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Vec<EntryEnvelope> {
+        &self.0
+    }
+    pub fn into_payload(self) -> Vec<EntryEnvelope> {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Vec<EntryEnvelope>> for Entries {
+    fn from(payload: Vec<EntryEnvelope>) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl LedgerHead {
+    pub fn new(payload: Option<HeadMark>) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Option<HeadMark> {
+        &self.0
+    }
+    pub fn into_payload(self) -> Option<HeadMark> {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Option<HeadMark>> for LedgerHead {
+    fn from(payload: Option<HeadMark>) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl KnownEntries {
+    pub fn new(payload: Vec<KnownEntry>) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Vec<KnownEntry> {
+        &self.0
+    }
+    pub fn into_payload(self) -> Vec<KnownEntry> {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Vec<KnownEntry>> for KnownEntries {
+    fn from(payload: Vec<KnownEntry>) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl LatestCheckpoint {
+    pub fn new(payload: Option<CheckpointReceipt>) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Option<CheckpointReceipt> {
+        &self.0
+    }
+    pub fn into_payload(self) -> Option<CheckpointReceipt> {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Option<CheckpointReceipt>> for LatestCheckpoint {
+    fn from(payload: Option<CheckpointReceipt>) -> Self {
+        Self::new(payload)
+    }
 }
 
 #[rustfmt::skip]
@@ -349,6 +460,44 @@ impl From<FixedBytes<32>> for DigestBytes {
 }
 
 #[rustfmt::skip]
+impl StoredHeadStamp {
+    pub fn new(payload: Option<HeadStamp>) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Option<HeadStamp> {
+        &self.0
+    }
+    pub fn into_payload(self) -> Option<HeadStamp> {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Option<HeadStamp>> for StoredHeadStamp {
+    fn from(payload: Option<HeadStamp>) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl PreviousDigest {
+    pub fn new(payload: Option<DigestBytes>) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Option<DigestBytes> {
+        &self.0
+    }
+    pub fn into_payload(self) -> Option<DigestBytes> {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Option<DigestBytes>> for PreviousDigest {
+    fn from(payload: Option<DigestBytes>) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
 impl KeepCount {
     pub fn new(payload: Integer) -> Self {
         Self(payload)
@@ -363,6 +512,25 @@ impl KeepCount {
 #[rustfmt::skip]
 impl From<Integer> for KeepCount {
     fn from(payload: Integer) -> Self {
+        Self::new(payload)
+    }
+}
+
+#[rustfmt::skip]
+impl Scope {
+    pub fn new(payload: Option<String>) -> Self {
+        Self(payload)
+    }
+    pub fn payload(&self) -> &Option<String> {
+        &self.0
+    }
+    pub fn into_payload(self) -> Option<String> {
+        self.0
+    }
+}
+#[rustfmt::skip]
+impl From<Option<String>> for Scope {
+    fn from(payload: Option<String>) -> Self {
         Self::new(payload)
     }
 }
@@ -744,20 +912,20 @@ impl std::fmt::Display for Output {
 #[rustfmt::skip]
 pub mod family_identity {
     pub const HEAD_FAMILY: [u8; 32] = [
-        94, 80, 238, 225, 172, 83, 132, 100, 74, 108, 40, 63, 165, 249, 181, 70, 56, 109,
-        69, 37, 236, 36, 75, 2, 46, 28, 231, 200, 220, 24, 182, 138,
+        198, 21, 152, 179, 202, 238, 234, 236, 27, 14, 205, 173, 132, 43, 200, 136, 149,
+        253, 17, 179, 57, 216, 193, 42, 86, 170, 49, 245, 239, 194, 116, 63,
     ];
     pub const ENTRY_FAMILY: [u8; 32] = [
-        243, 60, 80, 247, 248, 194, 248, 155, 51, 115, 128, 71, 199, 157, 96, 76, 44,
-        254, 240, 39, 255, 4, 160, 137, 93, 180, 55, 64, 134, 190, 51, 159,
+        61, 189, 100, 121, 214, 95, 140, 226, 162, 41, 172, 150, 80, 90, 7, 4, 225, 26,
+        113, 222, 17, 85, 197, 166, 142, 137, 241, 151, 105, 82, 108, 100,
     ];
     pub const CHECKPOINT_FAMILY: [u8; 32] = [
         167, 116, 227, 67, 252, 139, 149, 71, 19, 218, 216, 101, 240, 31, 2, 4, 133, 128,
         29, 185, 23, 242, 12, 50, 132, 170, 161, 14, 159, 249, 110, 100,
     ];
     pub const RETENTION_FAMILY: [u8; 32] = [
-        64, 51, 212, 255, 144, 192, 236, 154, 219, 129, 166, 190, 177, 19, 227, 201, 21,
-        77, 31, 111, 203, 244, 161, 49, 96, 140, 4, 195, 192, 140, 4, 254,
+        172, 173, 150, 17, 226, 23, 211, 6, 80, 207, 168, 240, 63, 80, 177, 35, 67, 240,
+        154, 33, 71, 151, 88, 127, 53, 232, 123, 19, 178, 3, 159, 37,
     ];
 }
 

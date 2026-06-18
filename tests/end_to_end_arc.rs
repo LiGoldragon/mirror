@@ -115,7 +115,7 @@ impl Restorer {
                 .decode()
                 .expect("decode checkpoint artifact");
         let suffix: Vec<VersionedCommitLogEntry> = bundle
-            .suffix
+            .suffix()
             .iter()
             .map(|envelope| {
                 rkyv::from_bytes::<VersionedCommitLogEntry, rkyv::rancor::Error>(
@@ -290,22 +290,23 @@ async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically
         .expect("checkpoint publishes");
 
     // Re-shipping the same history is idempotent at the daemon level.
+    let resend_entries = shipper
+        .engine()
+        .versioned_replay_from_sequence(sema_engine::CommitSequence::new(1))
+        .expect("reload full history")
+        .iter()
+        .map(|entry| {
+            shipper
+                .envelope_for_entry(entry)
+                .expect("encode versioned entry envelope")
+        })
+        .collect();
     let resend = MirrorTailnetClient::new(address)
-        .exchange(Input::Append(EntrySuffix {
-            store: StoreName::new(COMPONENT_STORE_NAME.to_owned()),
-            expected_head: None,
-            entries: shipper
-                .engine()
-                .versioned_replay_from_sequence(sema_engine::CommitSequence::new(1))
-                .expect("reload full history")
-                .iter()
-                .map(|entry| {
-                    shipper
-                        .envelope_for_entry(entry)
-                        .expect("encode versioned entry envelope")
-                })
-                .collect(),
-        }))
+        .exchange(Input::Append(EntrySuffix::from_entries(
+            StoreName::new(COMPONENT_STORE_NAME.to_owned()),
+            None,
+            resend_entries,
+        )))
         .await
         .expect("resend call succeeds");
     match resend {
@@ -329,7 +330,7 @@ async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically
     // fetched from the mirror.
     let restorer = Restorer::new(address);
     let bundle = restorer.fetch().await;
-    assert_eq!(bundle.suffix.len(), 2, "gamma + the beta tombstone");
+    assert_eq!(bundle.suffix().len(), 2, "gamma + the beta tombstone");
     let mut target = fixture.open_fresh("component-restored");
     Restorer::import(bundle, &mut target);
     let target_thoughts = target

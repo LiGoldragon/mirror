@@ -69,28 +69,24 @@ fn head(sequence: u64, seed: u8) -> HeadMark {
 }
 
 fn envelope(sequence: u64, previous: Option<u8>, seed: u8) -> EntryEnvelope {
-    EntryEnvelope {
-        sequence: CommitSequence::new(sequence),
-        previous_digest: previous.map(digest),
-        digest: digest(seed),
-        payload: PayloadBytes::new(Bytes::new(vec![0xaa, seed])),
-    }
+    EntryEnvelope::new(
+        CommitSequence::new(sequence),
+        previous.map(digest),
+        digest(seed),
+        PayloadBytes::new(Bytes::new(vec![0xaa, seed])),
+    )
 }
 
 fn append(store_name: &str, expected: Option<HeadMark>, entries: Vec<EntryEnvelope>) -> Input {
-    Input::Append(EntrySuffix {
-        store: store(store_name),
-        expected_head: expected,
+    Input::Append(EntrySuffix::from_entries(
+        store(store_name),
+        expected,
         entries,
-    })
+    ))
 }
 
 fn object_notice(store_name: &str, announced: HeadMark) -> Input {
-    Input::NotifyObject(ObjectNotice {
-        store: store(store_name),
-        head: announced,
-        source: None,
-    })
+    Input::NotifyObject(ObjectNotice::new(store(store_name), announced, None))
 }
 
 fn artifact(store_name: &str, sequence: u64, covered_end: u64) -> CheckpointArtifact {
@@ -149,8 +145,8 @@ async fn append_with_matching_expected_head_is_accepted_and_head_advances() {
         .await;
     match heads {
         Output::HeadsObserved(listing) => {
-            assert_eq!(listing.payload().len(), 1);
-            assert_eq!(listing.payload()[0].head, Some(head(3, 0x33)));
+            assert_eq!(listing.heads().len(), 1);
+            assert_eq!(listing.heads()[0].head().cloned(), Some(head(3, 0x33)));
         }
         other => panic!("expected HeadsObserved, got {other:?}"),
     }
@@ -227,7 +223,7 @@ async fn sequence_gap_is_rejected_typed() {
     match gapped {
         Output::AppendRejected(rejection) => {
             assert_eq!(rejection.reason, AppendRejectionReason::SequenceGap);
-            assert_eq!(rejection.head, Some(head(1, 0x11)));
+            assert_eq!(rejection.head().cloned(), Some(head(1, 0x11)));
         }
         other => panic!("expected AppendRejected, got {other:?}"),
     }
@@ -292,11 +288,11 @@ async fn crash_window_resend_re_advances_the_head_and_the_store_stays_live() {
     // transaction through the same public seam persist_suffix uses,
     // leaving exactly the state a crash between the two leaves behind.
     crashed
-        .commit_entry_rows(&NovelSuffix {
-            store: store("spirit"),
-            head: head(2, 0x22),
-            entries: vec![envelope(1, None, 0x11), envelope(2, Some(0x11), 0x22)],
-        })
+        .commit_entry_rows(&NovelSuffix::new(
+            store("spirit"),
+            head(2, 0x22),
+            vec![envelope(1, None, 0x11), envelope(2, Some(0x11), 0x22)],
+        ))
         .expect("entry rows commit");
     let mut engine = Engine::new(crashed);
 
@@ -347,7 +343,7 @@ async fn crash_window_resend_re_advances_the_head_and_the_store_stays_live() {
         .await;
     match heads {
         Output::HeadsObserved(listing) => {
-            assert_eq!(listing.payload()[0].head, Some(head(3, 0x33)));
+            assert_eq!(listing.heads()[0].head().cloned(), Some(head(3, 0x33)));
         }
         other => panic!("expected HeadsObserved, got {other:?}"),
     }
@@ -398,7 +394,7 @@ async fn retire_then_reregister_resumes_the_surviving_chain() {
         .await;
     match heads {
         Output::HeadsObserved(listing) => {
-            assert_eq!(listing.payload()[0].head, Some(head(2, 0x22)));
+            assert_eq!(listing.heads()[0].head().cloned(), Some(head(2, 0x22)));
         }
         other => panic!("expected HeadsObserved, got {other:?}"),
     }
@@ -437,7 +433,7 @@ async fn object_notice_for_unregistered_store_is_rejected_typed() {
     match reply {
         Output::ObjectNoticeRejected(rejection) => {
             assert_eq!(rejection.reason, ObjectNoticeRejectionReason::UnknownStore);
-            assert_eq!(rejection.head, None);
+            assert_eq!(rejection.head(), None);
         }
         other => panic!("expected ObjectNoticeRejected, got {other:?}"),
     }
@@ -477,7 +473,7 @@ async fn object_notice_for_missing_head_reports_current_head() {
     match reply {
         Output::ObjectNoticeRejected(rejection) => {
             assert_eq!(rejection.reason, ObjectNoticeRejectionReason::HeadBehind);
-            assert_eq!(rejection.head, Some(head(1, 0x11)));
+            assert_eq!(rejection.head().cloned(), Some(head(1, 0x11)));
         }
         other => panic!("expected ObjectNoticeRejected, got {other:?}"),
     }
@@ -539,7 +535,7 @@ async fn restore_returns_checkpoint_plus_suffix_past_its_coverage() {
     match restored {
         Output::Restored(bundle) => {
             assert_eq!(bundle.checkpoint, artifact("spirit", 1, 2));
-            assert_eq!(bundle.suffix, vec![envelope(3, Some(0x22), 0x33)]);
+            assert_eq!(bundle.suffix(), [envelope(3, Some(0x22), 0x33)]);
         }
         other => panic!("expected Restored, got {other:?}"),
     }
