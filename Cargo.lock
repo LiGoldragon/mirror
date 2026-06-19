@@ -369,7 +369,7 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 [[package]]
 name = "meta-signal-mirror"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=main#872af53b5ec1dd93a5f66d22272d699ed0c2b85b"
+source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=main#a5b625ff8307140c16d44a33b9abf46e0ee97a8a"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -429,7 +429,7 @@ dependencies = [
 [[package]]
 name = "nota-next"
 version = "0.5.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#7426a6a7d60d6e37ac40df4ecc98717af58129f8"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#7105c2be36067cb3d5b8f744aaf628ffdac7a112"
 dependencies = [
  "nota-next-derive",
  "rkyv",
@@ -438,7 +438,7 @@ dependencies = [
 [[package]]
 name = "nota-next-derive"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#7426a6a7d60d6e37ac40df4ecc98717af58129f8"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#7105c2be36067cb3d5b8f744aaf628ffdac7a112"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -596,7 +596,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 [[package]]
 name = "schema-cc"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#1de72dde6241b15299cd37fe096b3ef0e2f618b6"
+source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#b3be7d0f9161cc01353cfecd0cc0a17678b5030a"
 dependencies = [
  "nota-next",
  "prettyplease",
@@ -609,7 +609,7 @@ dependencies = [
 [[package]]
 name = "schema-next"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#1de72dde6241b15299cd37fe096b3ef0e2f618b6"
+source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#b3be7d0f9161cc01353cfecd0cc0a17678b5030a"
 dependencies = [
  "blake3",
  "nota-next",
@@ -621,7 +621,7 @@ dependencies = [
 [[package]]
 name = "schema-rust-next"
 version = "0.5.3"
-source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#733b76d39cbd3009bedd22899f2695b7d68b283a"
+source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#bb4dfe293e03e64e89f899621cc5dfa5bff6958e"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -712,7 +712,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "signal-frame"
 version = "0.2.1"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#e2eae5c28dac47eea6c4c641b60c4fd27bb547d8"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#b0c2c65c3da5117caa01819655de9952c4a0710c"
 dependencies = [
  "nota-next",
  "paste",
@@ -724,7 +724,7 @@ dependencies = [
 [[package]]
 name = "signal-frame-macros"
 version = "0.1.1"
-source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#e2eae5c28dac47eea6c4c641b60c4fd27bb547d8"
+source = "git+https://github.com/LiGoldragon/signal-frame.git?branch=main#b0c2c65c3da5117caa01819655de9952c4a0710c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -733,8 +733,8 @@ dependencies = [
 
 [[package]]
 name = "signal-mirror"
-version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/signal-mirror.git?branch=main#4ecfa050077115fade9127b5048dc7e23c32a2d0"
+version = "0.1.1"
+source = "git+https://github.com/LiGoldragon/signal-mirror.git?branch=main#d12dda916feb14db233bd265d260e4422a12895f"
 dependencies = [
  "nota-next",
  "rkyv",
