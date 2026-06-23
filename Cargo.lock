@@ -367,7 +367,7 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 [[package]]
 name = "meta-signal-mirror"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=main#dd3396f1e289e1e9d3636c52caca3df234fc0a31"
+source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=main#b45e53b7765226fa1d2e64b3ab41beea0a13d7d0"
 dependencies = [
  "nota-next",
  "rkyv",
@@ -426,8 +426,8 @@ dependencies = [
 
 [[package]]
 name = "nota-next"
-version = "0.5.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#c43d04a159e90314a0094b61ace66053371cc247"
+version = "0.5.1"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#4642807e40306a382acbcdcb7c61b5802c7e22f5"
 dependencies = [
  "nota-next-derive",
  "rkyv",
@@ -436,7 +436,7 @@ dependencies = [
 [[package]]
 name = "nota-next-derive"
 version = "0.3.0"
-source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#c43d04a159e90314a0094b61ace66053371cc247"
+source = "git+https://github.com/LiGoldragon/nota-next.git?branch=main#4642807e40306a382acbcdcb7c61b5802c7e22f5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -594,7 +594,7 @@ checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 [[package]]
 name = "schema-cc"
 version = "0.1.0"
-source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#4b7e830a7001708737a617bd8eedac8002cc1fc6"
+source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#0fc7970aaeb1a031f78d1a7ef3201f2004b6c0c3"
 dependencies = [
  "nota-next",
  "prettyplease",
@@ -607,7 +607,7 @@ dependencies = [
 [[package]]
 name = "schema-next"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#4b7e830a7001708737a617bd8eedac8002cc1fc6"
+source = "git+https://github.com/LiGoldragon/schema-next.git?branch=main#0fc7970aaeb1a031f78d1a7ef3201f2004b6c0c3"
 dependencies = [
  "blake3",
  "nota-next",
@@ -619,7 +619,7 @@ dependencies = [
 [[package]]
 name = "schema-rust-next"
 version = "0.5.3"
-source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#90d853c33ade57cfafca5942dd0790a3302a605f"
+source = "git+https://github.com/LiGoldragon/schema-rust-next.git?branch=main#e4ac3baf37121b8d7516bc5cdc6bdf026aa5b282"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -732,7 +732,7 @@ dependencies = [
 [[package]]
 name = "signal-mirror"
 version = "0.1.1"
-source = "git+https://github.com/LiGoldragon/signal-mirror.git?branch=main#e2105eb8a10f865a3768e5f648c84d05d0312152"
+source = "git+https://github.com/LiGoldragon/signal-mirror.git?branch=main#b5a888ac35a55c9fe88efb7ba92c424819985f0c"
 dependencies = [
  "nota-next",
  "rkyv",

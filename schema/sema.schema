@@ -54,15 +54,15 @@
 
   ;; The validated novel subset of an append, decided by Nexus: entries
   ;; the ledger does not hold yet, plus the head the store advances to.
-  NovelSuffix { store.StoreName head.HeadMark (Entries (Vector EntryEnvelope)) }
+  NovelSuffix { store.StoreName head.HeadMark Entries.(Vector EntryEnvelope) }
 
   ;; Check-results: SEMA looks up ledger state for a pending request;
   ;; the decision happens in the Nexus plane (schema/nexus.schema).
   KnownEntry { sequence.CommitSequence digest.EntryDigest }
   RegisteredLedger {
-    (LedgerHead (Optional HeadMark))
-    (KnownEntries (Vector KnownEntry))
-    (LatestCheckpoint (Optional CheckpointReceipt))
+    LedgerHead.(Optional HeadMark)
+    KnownEntries.(Vector KnownEntry)
+    LatestCheckpoint.(Optional CheckpointReceipt)
   }
   StoreLedger [(Registered RegisteredLedger) Unregistered]
   CheckedAppend { request.EntrySuffix ledger.StoreLedger }
@@ -74,11 +74,11 @@
   ;; Stored rows — the mirror's own versioned record families.
   DigestBytes (Bytes 32)
   HeadStamp { sequence.Integer digest.DigestBytes }
-  StoredHead { store.String (StoredHeadStamp (Optional HeadStamp)) }
+  StoredHead { store.String StoredHeadStamp.(Optional HeadStamp) }
   ReceivedEntry {
     store.String
     sequence.Integer
-    (PreviousDigest (Optional DigestBytes))
+    PreviousDigest.(Optional DigestBytes)
     digest.DigestBytes
     payload.Bytes
   }
@@ -91,10 +91,10 @@
   }
   KeepCount Integer
   RetentionRule [KeepEverything (KeepLatestCheckpoints KeepCount)]
-  RetentionSetting { (Scope (Optional String)) rule.RetentionRule }
+  RetentionSetting { Scope.(Optional String) rule.RetentionRule }
 
-  HeadFamily (Family { record StoredHead table store-heads key Domain })
-  EntryFamily (Family { record ReceivedEntry table received-entries key Domain })
-  CheckpointFamily (Family { record StoredCheckpoint table checkpoint-artifacts key Domain })
-  RetentionFamily (Family { record RetentionSetting table retention-rules key Domain })
+  HeadFamily (Family { record.StoredHead table.store-heads key.Domain })
+  EntryFamily (Family { record.ReceivedEntry table.received-entries key.Domain })
+  CheckpointFamily (Family { record.StoredCheckpoint table.checkpoint-artifacts key.Domain })
+  RetentionFamily (Family { record.RetentionSetting table.retention-rules key.Domain })
 }
