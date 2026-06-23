@@ -4,7 +4,7 @@
 //! The uniform daemon skeleton (argv parsing, the async working
 //! decode -> ask -> encode spine, the two-tier Unix listener bind, and
 //! the `ExitReport` entry) is EMITTED into `src/schema/daemon.rs` by
-//! schema-rust-next's daemon emitter. The mirror fills the escape
+//! schema-rust's daemon emitter. The mirror fills the escape
 //! hatches through `impl ComponentDaemon for Daemon`: its
 //! `Configuration`, building the shared `ServiceLink` runtime (which
 //! spawns the one `Service` actor — and with it the hand-wired

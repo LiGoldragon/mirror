@@ -11,7 +11,7 @@ use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 
-use nota_next::NotaEncode;
+use nota::NotaEncode;
 use triad_runtime::{FrameBody, LengthPrefixedCodec};
 
 use crate::error::{Error, Result};

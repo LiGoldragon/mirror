@@ -1,6 +1,6 @@
 use std::{env, path::PathBuf};
 
-use schema_rust_next::{
+use schema_rust::{
     MetaListenerTier, NexusDaemonShape, SocketModeBits, WorkingListenerTier,
     build::{DependencySchema, GenerationDriver, GenerationPlan, ModuleEmission},
 };
@@ -100,7 +100,7 @@ impl ContractSchemaDependencies {
     /// `Input` / `Output` roots live in the dependency crate `signal-mirror`;
     /// the meta tier's contract lives in `meta-signal-mirror`, decoded by the
     /// component-owned `handle_meta_connection` hook. The tailnet TCP ingress
-    /// is NOT emitted — schema-rust-next does not emit TCP daemons yet; the
+    /// is NOT emitted — schema-rust does not emit TCP daemons yet; the
     /// daemon hand-wires `triad_runtime::TcpListenerDaemon` around the same
     /// engine actor (see src/service.rs).
     fn daemon_shape() -> NexusDaemonShape {

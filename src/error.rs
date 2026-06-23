@@ -14,7 +14,7 @@ pub enum Error {
     MissingArgument,
 
     #[error("NOTA request decode: {0}")]
-    NotaDecode(#[from] nota_next::NotaDecodeError),
+    NotaDecode(#[from] nota::NotaDecodeError),
 
     #[error("socket environment variable {variable} is not set")]
     SocketVariableUnset { variable: String },

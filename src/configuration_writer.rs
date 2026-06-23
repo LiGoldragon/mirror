@@ -7,7 +7,7 @@
 //! (inline or a `.nota` file). The daemon itself never parses NOTA.
 
 use meta_signal_mirror::{ConfigurationWrite, WirePath};
-use nota_next::{NotaDecodeError, NotaEncode, NotaSource};
+use nota::{NotaDecodeError, NotaEncode, NotaSource};
 use thiserror::Error;
 use triad_runtime::{ArgumentError, ComponentArgument, ComponentCommand};
 

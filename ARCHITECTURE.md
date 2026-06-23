@@ -44,7 +44,7 @@ the same length-prefixed frame codec and the same `signal-mirror` contract
 as the Unix working tier. Every request from every transport serialises
 through one mailbox: the single writer is structural.
 
-Hand-wiring is the honest scope: schema-rust-next does not emit TCP
+Hand-wiring is the honest scope: schema-rust does not emit TCP
 listener tiers yet, and the emitted `DaemonBinder` owns its engine actor
 privately, so a second transport cannot share it. Generalising this into
 emission (a TCP listener tier on `NexusDaemonShape` plus a shared-engine

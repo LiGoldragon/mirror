@@ -108,7 +108,7 @@ impl Actor for Service {
     /// reference and serve it from a background task. The Unix tiers are
     /// bound by the generated daemon shell; the TCP tier is the first
     /// hand-wired consumer of `triad_runtime::TcpListenerDaemon`
-    /// (schema-rust-next does not emit TCP daemons yet).
+    /// (schema-rust does not emit TCP daemons yet).
     async fn on_start(mut actor: Self::Args, actor_reference: ActorRef<Self>) -> Result<Self> {
         let ingress = TailnetIngress::new(actor_reference);
         let listener = TcpListenerDaemon::new(

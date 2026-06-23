@@ -5,7 +5,7 @@
 //! exactly one binary rkyv configuration file and never parses NOTA.
 
 use mirror::configuration_writer::CommandLine;
-use nota_next::NotaEncode;
+use nota::NotaEncode;
 use triad_runtime::ComponentCommand;
 
 fn main() -> std::process::ExitCode {
