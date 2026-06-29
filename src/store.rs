@@ -539,6 +539,25 @@ impl Store {
         )))
     }
 
+    /// Every entry this mirror durably holds for one store, oldest first,
+    /// reconstructed as the wire envelope it landed as — sequence, previous
+    /// digest, carried digest, and the FULL landed payload. The read sibling
+    /// of `persist_suffix`: where `load_heads` surfaces only the head digest,
+    /// this surfaces the exact body bytes the mirror committed, so a caller can
+    /// re-derive an entry's content address from what actually landed rather
+    /// than trusting the head it was told. Unlike `load_restore`, it needs no
+    /// checkpoint and returns the whole chain.
+    pub fn landed_entries(&self, store: &StoreName) -> Result<Vec<EntryEnvelope>> {
+        Ok(self
+            .entry_rows(KeyRange::between(
+                Self::sequence_key(store, 0),
+                Self::sequence_key(store, u64::MAX),
+            ))?
+            .iter()
+            .map(ReceivedEntry::to_envelope)
+            .collect())
+    }
+
     /// Observe store heads: one store or every registered store.
     pub fn load_heads(&self, query: &HeadQuery) -> Result<HeadListing> {
         let rows = match query.payload() {
