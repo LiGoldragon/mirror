@@ -20,6 +20,7 @@ pub mod configuration_writer;
 pub mod decision;
 pub mod engine;
 pub mod error;
+pub mod readback;
 pub mod schema_daemon;
 pub mod service;
 pub mod shipper;
@@ -40,6 +41,7 @@ pub mod schema {
 pub use config::{Configuration, ConfigurationError};
 pub use engine::Engine;
 pub use error::{Error, Result};
+pub use readback::LandedBody;
 pub use schema::daemon::{ComponentDaemon, DaemonCommand, DaemonEntry, DaemonError};
 pub use schema_daemon::Daemon;
 pub use service::{

@@ -1,6 +1,6 @@
 [package]
 name         = "mirror"
-version      = "0.1.1"
+version      = "0.1.2"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
@@ -30,11 +30,22 @@ name = "mirror-write-configuration"
 path = "src/bin/mirror_write_configuration.rs"
 required-features = ["nota-text"]
 
+# The two-VM criome-auth witness's in-VM full-body verifier: reads the landed
+# body back over Restore and re-derives its content address. Gated behind the
+# `witness` feature so the default daemon build stays lean.
+[[bin]]
+name = "mirror-landed-body-verifier"
+path = "src/bin/mirror_landed_body_verifier.rs"
+required-features = ["witness"]
+
 [features]
 default = ["nota-text"]
 # nota-text enables the NOTA text codec on the generated runtime nouns and the
 # CLI text edges. The generated schema modules gate their NOTA surface on it.
 nota-text = ["signal-mirror/nota-text", "meta-signal-mirror/nota-text"]
+# witness builds the two-VM witness verifier bin alongside the nota-text CLIs
+# (the witness package node-b installs needs both). It adds no new dependency.
+witness = ["nota-text"]
 
 [dependencies]
 meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", branch = "main" }

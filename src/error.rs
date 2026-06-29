@@ -16,6 +16,9 @@ pub enum Error {
     #[error("NOTA request decode: {0}")]
     NotaDecode(#[from] nota::NotaDecodeError),
 
+    #[error("landed body is not a versioned commit log entry: {0}")]
+    LandedBodyDecode(String),
+
     #[error("socket environment variable {variable} is not set")]
     SocketVariableUnset { variable: String },
 

@@ -78,6 +78,19 @@
               meta.mainProgram = "mirror-daemon";
             }
           );
+          # The two-VM criome-auth witness build: the daemon + nota-text CLIs
+          # PLUS the mirror-landed-body-verifier (the `witness` feature also
+          # enables nota-text). node-b installs this so it can re-hash the
+          # landed body in the VM. Consumed by CriomOS-test-cluster.
+          witness = context.craneLib.buildPackage (
+            context.commonArgs
+            // {
+              inherit (context) cargoArtifacts;
+              cargoExtraArgs = "--features witness";
+              pname = "mirror-witness";
+              meta.mainProgram = "mirror-daemon";
+            }
+          );
         }
       );
 
@@ -121,6 +134,16 @@
             // {
               inherit (context) cargoArtifacts;
               cargoTestExtraArgs = "--test landed_body_readback restore_hands_back_the_landed_genesis_body_which_rehashes_to_the_head -- --exact";
+            }
+          );
+          # The in-VM witness verifier bin compiles under `--features witness`
+          # and its digest-hex decode round-trips. The bin's re-hash itself is
+          # the SAME `LandedBody::content_address` proven by the check above.
+          mirror-landed-body-verifier-builds = context.craneLib.cargoTest (
+            context.commonArgs
+            // {
+              inherit (context) cargoArtifacts;
+              cargoTestExtraArgs = "--features witness --bin mirror-landed-body-verifier";
             }
           );
           fmt = context.craneLib.cargoFmt {

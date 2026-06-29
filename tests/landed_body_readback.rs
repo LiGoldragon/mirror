@@ -21,9 +21,8 @@
 //! re-hash a remote mirror's landed body with no in-process access and no new
 //! wire op.
 
-use mirror::{Engine, Store};
+use mirror::{Engine, LandedBody, Store};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
-use sema_engine::VersionedCommitLogEntry;
 use signal_mirror::{
     ArtifactBytes, ArtifactDigest, Bytes, CheckpointArtifact, CheckpointSequence, CommitSequence,
     EntryDigest, EntryEnvelope, EntrySuffix, FixedBytes, Input, Output, PayloadBytes, RestoreQuery,
@@ -214,32 +213,24 @@ async fn restore_hands_back_the_landed_genesis_body_which_rehashes_to_the_head()
     );
 
     // THE PROOF: re-derive the content address from the body read back over the
-    // wire, reproducing the head — sema-engine's own content-addressing.
-    let decoded =
-        rkyv::from_bytes::<VersionedCommitLogEntry, rkyv::rancor::Error>(landed.payload.as_slice())
-            .expect("the restored body is a genuine rkyv VersionedCommitLogEntry");
-    let rederived = VersionedCommitLogEntry::new(
-        decoded.store_name().clone(),
-        decoded.schema_hash(),
-        decoded.commit_sequence(),
-        decoded.snapshot(),
-        decoded.previous_entry_digest(),
-        decoded.operations().clone(),
-    );
+    // wire, reproducing the head — sema-engine's own content-addressing, through
+    // the SAME `LandedBody::content_address` the two-VM witness verifier bin uses.
+    let rederived = LandedBody::new(landed.payload.as_slice())
+        .content_address()
+        .expect("the restored body is a genuine rkyv VersionedCommitLogEntry");
     assert_eq!(
-        rederived.entry_digest(),
-        real_head,
+        rederived, real_head,
         "re-deriving the digest from the RESTORED body reproduces the record's real head"
     );
     assert_eq!(
         landed.digest.as_bytes(),
-        rederived.entry_digest().bytes(),
+        rederived.bytes(),
         "the landed head digest is the genuine content address of the body Restore handed back"
     );
 
     eprintln!(
         "RESTORE_READBACK head = {} body octets = {}",
-        rederived.entry_digest(),
+        rederived,
         shipped_body.len()
     );
 }

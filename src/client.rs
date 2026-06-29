@@ -35,6 +35,15 @@ impl DaemonSocket {
         stream.flush()?;
         Ok(codec.read_body(&mut stream)?.into_bytes())
     }
+
+    /// Send one working-surface `signal_mirror::Input` as a binary signal frame
+    /// and decode the typed `Output` reply. The non-text round-trip the NOTA CLI
+    /// and the two-VM witness verifier both ride.
+    pub fn request(&self, input: signal_mirror::Input) -> Result<signal_mirror::Output> {
+        let reply = self.exchange(input.encode_signal_frame()?)?;
+        let (_route, output) = signal_mirror::Output::decode_signal_frame(&reply)?;
+        Ok(output)
+    }
 }
 
 /// The working CLI command: one NOTA argument naming a
@@ -58,8 +67,7 @@ impl CommandLine {
                 variable: "MIRROR_SOCKET".to_owned(),
             }
         })?;
-        let reply = socket.exchange(input.encode_signal_frame()?)?;
-        let (_route, decoded) = signal_mirror::Output::decode_signal_frame(&reply)?;
+        let decoded = socket.request(input)?;
         writeln!(output, "{}", decoded.to_nota()).map_err(Error::Io)?;
         Ok(())
     }
