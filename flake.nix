@@ -112,6 +112,17 @@
               cargoTestExtraArgs = "--features nota-text --all-targets";
             }
           );
+          # A REAL landed body is read back OUT of the mirror over the existing
+          # working contract (a zero-coverage PublishCheckpoint then Restore), and
+          # re-deriving its content address reproduces the head — the two-VM
+          # witness's wire readback, with no in-process handle and no new wire op.
+          mirror-restore-hands-back-landed-body = context.craneLib.cargoTest (
+            context.commonArgs
+            // {
+              inherit (context) cargoArtifacts;
+              cargoTestExtraArgs = "--test landed_body_readback restore_hands_back_the_landed_genesis_body_which_rehashes_to_the_head -- --exact";
+            }
+          );
           fmt = context.craneLib.cargoFmt {
             inherit (context) src;
           };
