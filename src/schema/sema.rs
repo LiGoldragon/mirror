@@ -221,6 +221,26 @@ pub struct KnownEntry {
     feature = "nota-text",
     derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
 )]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+)]
+pub enum ContentAddressing {
+    Opaque,
+    SemaVersionedLog,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
 #[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub(crate) struct LedgerHead(Option<HeadMark>);
 
@@ -250,6 +270,7 @@ pub struct RegisteredLedger {
     pub(crate) ledger_head: LedgerHead,
     pub(crate) known_entries: KnownEntries,
     pub(crate) latest_checkpoint: LatestCheckpoint,
+    pub addressing: ContentAddressing,
 }
 
 #[rustfmt::skip]
@@ -414,6 +435,17 @@ pub(crate) struct Scope(Option<String>);
 pub struct RetentionSetting {
     pub(crate) scope: Scope,
     pub rule: RetentionRule,
+}
+
+#[rustfmt::skip]
+#[cfg_attr(
+    feature = "nota-text",
+    derive(nota::NotaDecode, nota::NotaDecodeTraced, nota::NotaEncode)
+)]
+#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct StorePolicy {
+    pub store: String,
+    pub addressing: ContentAddressing,
 }
 
 #[rustfmt::skip]
@@ -1020,6 +1052,10 @@ pub mod family_identity {
         250, 110, 230, 190, 122, 28, 150, 34, 205, 102, 169, 254, 90, 143, 65, 117, 150,
         38, 67, 81, 98, 226, 212, 140, 157, 29, 30, 43, 71, 103, 24, 226,
     ];
+    pub const POLICY_FAMILY: [u8; 32] = [
+        50, 3, 227, 235, 58, 221, 188, 198, 75, 202, 70, 175, 84, 117, 40, 190, 186, 83,
+        198, 222, 72, 144, 241, 163, 228, 59, 133, 20, 83, 203, 228, 101,
+    ];
 }
 
 #[rustfmt::skip]
@@ -1062,6 +1098,7 @@ pub enum RecordFamily {
     EntryFamily(ReceivedEntry),
     CheckpointFamily(StoredCheckpoint),
     RetentionFamily(RetentionSetting),
+    PolicyFamily(StorePolicy),
 }
 #[rustfmt::skip]
 impl RecordFamily {
@@ -1097,6 +1134,13 @@ impl RecordFamily {
             sema_engine::TableName::new("retention-rules"),
             sema_engine::FamilyName::new("RetentionFamily"),
             sema_engine::SchemaHash::new(family_identity::RETENTION_FAMILY),
+        )
+    }
+    pub fn policy_family() -> sema_engine::TableDescriptor<StorePolicy> {
+        sema_engine::TableDescriptor::new(
+            sema_engine::TableName::new("store-policies"),
+            sema_engine::FamilyName::new("PolicyFamily"),
+            sema_engine::SchemaHash::new(family_identity::POLICY_FAMILY),
         )
     }
     pub fn decode(
@@ -1180,6 +1224,23 @@ impl RecordFamily {
                         family: sema_engine::FamilyName::new("RetentionFamily"),
                     })?;
                 Ok(Self::RetentionFamily(record))
+            }
+            "PolicyFamily" => {
+                let generated = sema_engine::SchemaHash::new(
+                    family_identity::POLICY_FAMILY,
+                );
+                if identity.schema_hash() != generated {
+                    return Err(RecordFamilyError::SchemaHashMismatch {
+                        family: sema_engine::FamilyName::new("PolicyFamily"),
+                        stored: identity.schema_hash(),
+                        generated,
+                    });
+                }
+                let record = rkyv::from_bytes::<StorePolicy, rkyv::rancor::Error>(bytes)
+                    .map_err(|_| RecordFamilyError::RecordDecode {
+                        family: sema_engine::FamilyName::new("PolicyFamily"),
+                    })?;
+                Ok(Self::PolicyFamily(record))
             }
             _ => {
                 Err(RecordFamilyError::UnknownFamily {

@@ -16,10 +16,11 @@ use signal_mirror::{
     PublishRejectionReason,
 };
 
+use crate::readback::LandedBody;
 use crate::schema::nexus::{AppendDecision, CheckpointDecision, ObjectNoticeDecision};
 use crate::schema::sema::{
-    CheckedAppend, CheckedCheckpoint, CheckedObjectNotice, KnownEntry, NovelSuffix,
-    RegisteredLedger, StoreLedger,
+    CheckedAppend, CheckedCheckpoint, CheckedObjectNotice, ContentAddressing, KnownEntry,
+    NovelSuffix, RegisteredLedger, StoreLedger,
 };
 
 impl CheckedAppend {
@@ -53,6 +54,9 @@ impl CheckedAppend {
             return refuse(reason, request.store, ledger.head().cloned());
         }
         if let Some(reason) = ledger.known_divergence(&entries) {
+            return refuse(reason, request.store, ledger.head().cloned());
+        }
+        if let Some(reason) = ledger.body_addressing_violation(&entries) {
             return refuse(reason, request.store, ledger.head().cloned());
         }
         let Some(suffix_end) = entries.last().map(|entry| HeadMark {
@@ -188,6 +192,32 @@ impl RegisteredLedger {
             }
         }
         None
+    }
+
+    /// For a `SemaVersionedLog` store, every body must content-address to
+    /// its carried digest: the carried digest may chain correctly while
+    /// the payload does not hash to it (a tampered or corrupted body).
+    /// Recompute each body's address from its octets and refuse on the
+    /// first mismatch with `DigestMismatch`, before any landing.
+    ///
+    /// An `Opaque` store returns `None` on the first match arm without
+    /// touching `entries` — the payload-blind default path (Spirit 0yx5),
+    /// byte-for-byte today's decision. Absence of policy reads as `Opaque`
+    /// (see `RegisteredLedger::addressing`), so the special case dissolves
+    /// into the normal case rather than adding a branch to remember.
+    fn body_addressing_violation(
+        &self,
+        entries: &[EntryEnvelope],
+    ) -> Option<AppendRejectionReason> {
+        match self.addressing() {
+            ContentAddressing::Opaque => None,
+            ContentAddressing::SemaVersionedLog => entries
+                .iter()
+                .find(|entry| {
+                    !LandedBody::new(entry.payload.as_slice()).addresses_to(&entry.digest)
+                })
+                .map(|_| AppendRejectionReason::DigestMismatch),
+        }
     }
 }
 

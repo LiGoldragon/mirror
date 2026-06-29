@@ -117,9 +117,10 @@ impl Mirror {
         let store = Store::open(&directory.path().join("mirror.sema")).expect("mirror store opens");
         let mut engine = Engine::new(store);
         let registered = engine.handle_meta(meta_signal_mirror::Input::RegisterStore(
-            meta_signal_mirror::StoreRegistration::new(meta_signal_mirror::StoreName::new(
-                store_name.to_owned(),
-            )),
+            meta_signal_mirror::StoreRegistration {
+                store: meta_signal_mirror::StoreName::new(store_name.to_owned()),
+                addressing: meta_signal_mirror::ContentAddressing::Opaque,
+            },
         ));
         assert!(matches!(
             registered,

@@ -228,9 +228,10 @@ async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically
     // The owner registers the component store on the meta surface.
     let registered = link
         .meta(meta_signal_mirror::Input::RegisterStore(
-            meta_signal_mirror::StoreRegistration::new(meta_signal_mirror::StoreName::new(
-                COMPONENT_STORE_NAME.to_owned(),
-            )),
+            meta_signal_mirror::StoreRegistration {
+                store: meta_signal_mirror::StoreName::new(COMPONENT_STORE_NAME.to_owned()),
+                addressing: meta_signal_mirror::ContentAddressing::Opaque,
+            },
         ))
         .await
         .expect("meta register");
@@ -377,9 +378,10 @@ async fn component_shipper_actor_ships_suffix_and_publishes_checkpoint() {
 
     let registered = link
         .meta(meta_signal_mirror::Input::RegisterStore(
-            meta_signal_mirror::StoreRegistration::new(meta_signal_mirror::StoreName::new(
-                COMPONENT_STORE_NAME.to_owned(),
-            )),
+            meta_signal_mirror::StoreRegistration {
+                store: meta_signal_mirror::StoreName::new(COMPONENT_STORE_NAME.to_owned()),
+                addressing: meta_signal_mirror::ContentAddressing::Opaque,
+            },
         ))
         .await
         .expect("meta register");

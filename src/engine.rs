@@ -82,7 +82,7 @@ impl Engine {
                 ))
             }
             meta_signal_mirror::Input::RegisterStore(registration) => {
-                self.register_store(registration.into_payload())
+                self.register_store(registration)
             }
             meta_signal_mirror::Input::RetireStore(retirement) => {
                 self.retire_store(retirement.into_payload())
@@ -94,9 +94,9 @@ impl Engine {
 
     fn register_store(
         &mut self,
-        store: meta_signal_mirror::StoreName,
+        registration: meta_signal_mirror::StoreRegistration,
     ) -> meta_signal_mirror::Output {
-        let working_name = signal_mirror::StoreName::new(store.as_str().to_owned());
+        let working_name = signal_mirror::StoreName::new(registration.store.as_str().to_owned());
         if !Store::name_is_keyable(&working_name) {
             return Self::meta_rejection(
                 OrderRejectionReason::StoreNameInvalid,
@@ -107,15 +107,13 @@ impl Engine {
             Ok(listing) => listing,
             Err(rejection) => return rejection,
         };
-        if Self::registry_holds(&listing, &store) {
+        if Self::registry_holds(&listing, &registration.store) {
             return Self::meta_rejection(
                 OrderRejectionReason::StoreAlreadyRegistered,
                 "store is already registered",
             );
         }
-        match self.apply_meta(WriteInput::RegisterStore(
-            meta_signal_mirror::StoreRegistration::new(store),
-        )) {
+        match self.apply_meta(WriteInput::RegisterStore(registration)) {
             WriteOutput::StoreRegistered(receipt) => {
                 meta_signal_mirror::Output::StoreRegistered(receipt)
             }
@@ -430,9 +428,14 @@ impl SemaEngine for Engine {
                 .map(WriteOutput::CheckpointPersisted)
                 .unwrap_or_else(WriteOutput::from_fault),
             WriteInput::RegisterStore(registration) => {
-                let store = registration.payload().clone();
+                let store = registration.store.clone();
+                let addressing =
+                    crate::schema::sema::ContentAddressing::from_meta(&registration.addressing);
                 self.store
-                    .register_store(&signal_mirror::StoreName::new(store.as_str().to_owned()))
+                    .register_store(
+                        &signal_mirror::StoreName::new(store.as_str().to_owned()),
+                        addressing,
+                    )
                     .map(|()| {
                         WriteOutput::StoreRegistered(meta_signal_mirror::RegistrationReceipt::new(
                             store,

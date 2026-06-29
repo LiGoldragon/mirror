@@ -25,10 +25,10 @@ use signal_mirror::{
 
 use crate::error::Result;
 use crate::schema::sema::{
-    Bytes, CheckedAppend, CheckedCheckpoint, CheckedObjectNotice, DigestBytes, Entries, HeadStamp,
-    KnownEntries, KnownEntry, LatestCheckpoint, LedgerHead, NovelSuffix, PreviousDigest,
-    ReceivedEntry, RecordFamily, RegisteredLedger, RetentionRule, RetentionSetting, Scope,
-    StoreLedger, StoredCheckpoint, StoredHead, StoredHeadStamp,
+    Bytes, CheckedAppend, CheckedCheckpoint, CheckedObjectNotice, ContentAddressing, DigestBytes,
+    Entries, HeadStamp, KnownEntries, KnownEntry, LatestCheckpoint, LedgerHead, NovelSuffix,
+    PreviousDigest, ReceivedEntry, RecordFamily, RegisteredLedger, RetentionRule, RetentionSetting,
+    Scope, StoreLedger, StorePolicy, StoredCheckpoint, StoredHead, StoredHeadStamp,
 };
 
 /// Key separator between a store name and an ordering suffix. Component
@@ -79,6 +79,26 @@ impl EngineRecord for RetentionSetting {
     }
 }
 
+impl EngineRecord for StorePolicy {
+    fn record_key(&self) -> RecordKey {
+        RecordKey::new(self.store.clone())
+    }
+}
+
+impl ContentAddressing {
+    /// Map the meta wire policy onto the mirror's SELF-CONTAINED local
+    /// policy at the store boundary — the sibling of
+    /// `RetentionSetting::from_order`. The two enums are deliberately
+    /// distinct types (wire vs durable shape); this is their one contact
+    /// point.
+    pub fn from_meta(addressing: &meta_signal_mirror::ContentAddressing) -> Self {
+        match addressing {
+            meta_signal_mirror::ContentAddressing::Opaque => Self::Opaque,
+            meta_signal_mirror::ContentAddressing::SemaVersionedLog => Self::SemaVersionedLog,
+        }
+    }
+}
+
 impl NovelSuffix {
     pub fn new(store: StoreName, head: HeadMark, entries: Vec<EntryEnvelope>) -> Self {
         Self {
@@ -98,11 +118,13 @@ impl RegisteredLedger {
         head: Option<HeadMark>,
         known: Vec<KnownEntry>,
         latest_checkpoint: Option<CheckpointReceipt>,
+        addressing: ContentAddressing,
     ) -> Self {
         Self {
             ledger_head: LedgerHead::new(head),
             known_entries: KnownEntries::new(known),
             latest_checkpoint: LatestCheckpoint::new(latest_checkpoint),
+            addressing,
         }
     }
 
@@ -116,6 +138,13 @@ impl RegisteredLedger {
 
     pub fn latest_checkpoint(&self) -> Option<&CheckpointReceipt> {
         self.latest_checkpoint.payload().as_ref()
+    }
+
+    /// The store's content-addressing policy. A store registered before
+    /// the policy family existed has no row and reads as `Opaque`, so
+    /// the append guard is a no-op for it — absence is the normal case.
+    pub fn addressing(&self) -> ContentAddressing {
+        self.addressing
     }
 }
 
@@ -269,6 +298,7 @@ pub struct Store {
     entries: TableReference<ReceivedEntry>,
     checkpoints: TableReference<StoredCheckpoint>,
     retention: TableReference<RetentionSetting>,
+    policies: TableReference<StorePolicy>,
 }
 
 impl Store {
@@ -283,18 +313,32 @@ impl Store {
         let entries = engine.register_table(RecordFamily::entry_family())?;
         let checkpoints = engine.register_table(RecordFamily::checkpoint_family())?;
         let retention = engine.register_table(RecordFamily::retention_family())?;
+        let policies = engine.register_table(RecordFamily::policy_family())?;
         Ok(Self {
             engine,
             heads,
             entries,
             checkpoints,
             retention,
+            policies,
         })
     }
 
     fn head_row(&self, store: &StoreName) -> Result<Option<StoredHead>> {
         let snapshot = self.engine.match_records(QueryPlan::key(
             self.heads,
+            RecordKey::new(store.as_str().to_owned()),
+        ))?;
+        Ok(snapshot.records().first().cloned())
+    }
+
+    /// The store's content-addressing policy row. A store registered
+    /// before the policy family existed has none; the caller defaults
+    /// such a store to `Opaque`, so absence is the payload-blind normal
+    /// case rather than a branch to remember.
+    fn policy_row(&self, store: &StoreName) -> Result<Option<StorePolicy>> {
+        let snapshot = self.engine.match_records(QueryPlan::key(
+            self.policies,
             RecordKey::new(store.as_str().to_owned()),
         ))?;
         Ok(snapshot.records().first().cloned())
@@ -350,12 +394,17 @@ impl Store {
                 .collect(),
             None => Vec::new(),
         };
+        let addressing = self
+            .policy_row(store)?
+            .map(|policy| policy.addressing)
+            .unwrap_or(ContentAddressing::Opaque);
         Ok(StoreLedger::Registered(RegisteredLedger::new(
             head_row.head().map(HeadStamp::to_mark),
             known,
             self.latest_checkpoint_row(store)?
                 .as_ref()
                 .map(StoredCheckpoint::to_receipt),
+            addressing,
         )))
     }
 
@@ -463,7 +512,11 @@ impl Store {
     /// shipper continues the chain instead of faulting on re-asserted
     /// rows. Registering an already-registered store is reported by the
     /// caller through the registry check, not here.
-    pub fn register_store(&mut self, store: &StoreName) -> Result<()> {
+    pub fn register_store(
+        &mut self,
+        store: &StoreName,
+        addressing: ContentAddressing,
+    ) -> Result<()> {
         let surviving = self.entry_rows(KeyRange::between(
             Self::sequence_key(store, 0),
             Self::sequence_key(store, u64::MAX),
@@ -475,6 +528,30 @@ impl Store {
                 surviving.last().map(ReceivedEntry::to_head_stamp),
             ),
         ))?;
+        // Upsert the policy: a virgin store asserts a fresh row; a
+        // re-registration after retire (which keeps the surviving policy
+        // row) mutates it to the newly chosen addressing. The head above
+        // is always a fresh assert because retire retracts it.
+        self.upsert_policy(StorePolicy {
+            store: store.as_str().to_owned(),
+            addressing,
+        })?;
+        Ok(())
+    }
+
+    /// Assert a policy row when none exists, otherwise mutate the
+    /// surviving one — the same idempotent shape `persist_retention`
+    /// uses, so a re-registration overwrites the prior policy.
+    fn upsert_policy(&mut self, row: StorePolicy) -> Result<()> {
+        let key = row.record_key();
+        let existing = self
+            .engine
+            .match_records(QueryPlan::key(self.policies, key))?;
+        if existing.records().is_empty() {
+            self.engine.assert(Assertion::new(self.policies, row))?;
+        } else {
+            self.engine.mutate(Mutation::new(self.policies, row))?;
+        }
         Ok(())
     }
 

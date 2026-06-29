@@ -136,6 +136,18 @@
               cargoTestExtraArgs = "--test landed_body_readback restore_hands_back_the_landed_genesis_body_which_rehashes_to_the_head -- --exact";
             }
           );
+          # A SemaVersionedLog store recomputes each body's content address at
+          # append and REFUSES a digest-mismatched body before it lands
+          # (landed_entries empty, head None), the faithful body lands and
+          # re-hashes to the head, and an Opaque control lands the same tampered
+          # body unchanged — the append-time twin of the post-landing verifier.
+          mirror-append-refuses-digest-mismatch = context.craneLib.cargoTest (
+            context.commonArgs
+            // {
+              inherit (context) cargoArtifacts;
+              cargoTestExtraArgs = "--test append_addressing_refusal refuses_mismatched_body_and_lands_matching_body -- --exact";
+            }
+          );
           # The in-VM witness verifier bin compiles under `--features witness`
           # and its digest-hex decode round-trips. The bin's re-hash itself is
           # the SAME `LandedBody::content_address` proven by the check above.

@@ -59,10 +59,17 @@
   ;; Check-results: SEMA looks up ledger state for a pending request;
   ;; the decision happens in the Nexus plane (schema/nexus.schema).
   KnownEntry { sequence.CommitSequence digest.EntryDigest }
+
+  ;; The mirror's SELF-CONTAINED local content-addressing policy, mapped
+  ;; from the meta ContentAddressing at the store boundary (sibling of the
+  ;; retention meta->local map). Opaque is first so a store with no policy
+  ;; row reads as Opaque — payload-blind, today's path byte-for-byte.
+  ContentAddressing [Opaque SemaVersionedLog]
   RegisteredLedger {
     LedgerHead.(Optional HeadMark)
     KnownEntries.(Vector KnownEntry)
     LatestCheckpoint.(Optional CheckpointReceipt)
+    addressing.ContentAddressing
   }
   StoreLedger [(Registered RegisteredLedger) Unregistered]
   CheckedAppend { request.EntrySuffix ledger.StoreLedger }
@@ -93,8 +100,14 @@
   RetentionRule [KeepEverything (KeepLatestCheckpoints KeepCount)]
   RetentionSetting { Scope.(Optional String) rule.RetentionRule }
 
+  ;; Per-store content-addressing policy row, keyed by store name. A
+  ;; SELF-CONTAINED local family: absence of a row defaults to Opaque, so
+  ;; stores registered before this family behave exactly as today.
+  StorePolicy { store.String addressing.ContentAddressing }
+
   HeadFamily (Family { record.StoredHead table.store-heads key.Domain })
   EntryFamily (Family { record.ReceivedEntry table.received-entries key.Domain })
   CheckpointFamily (Family { record.StoredCheckpoint table.checkpoint-artifacts key.Domain })
   RetentionFamily (Family { record.RetentionSetting table.retention-rules key.Domain })
+  PolicyFamily (Family { record.StorePolicy table.store-policies key.Domain })
 }

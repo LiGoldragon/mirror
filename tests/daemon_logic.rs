@@ -37,9 +37,10 @@ impl Fixture {
         let registered = fixture
             .engine
             .handle_meta(meta_signal_mirror::Input::RegisterStore(
-                meta_signal_mirror::StoreRegistration::new(meta_signal_mirror::StoreName::new(
-                    store_name.to_owned(),
-                )),
+                meta_signal_mirror::StoreRegistration {
+                    store: meta_signal_mirror::StoreName::new(store_name.to_owned()),
+                    addressing: meta_signal_mirror::ContentAddressing::Opaque,
+                },
             ));
         assert!(matches!(
             registered,
@@ -282,7 +283,12 @@ async fn empty_suffix_is_rejected_typed() {
 async fn crash_window_resend_re_advances_the_head_and_the_store_stays_live() {
     let directory = tempfile::tempdir().expect("temp dir");
     let mut crashed = Store::open(&directory.path().join("mirror.sema")).expect("store opens");
-    crashed.register_store(&store("spirit")).expect("registers");
+    crashed
+        .register_store(
+            &store("spirit"),
+            mirror::schema::sema::ContentAddressing::Opaque,
+        )
+        .expect("registers");
     // The crash window: `Store::persist_suffix` is two transactions —
     // the entry rows commit, the head advance does not. Drive the first
     // transaction through the same public seam persist_suffix uses,
@@ -380,9 +386,10 @@ async fn retire_then_reregister_resumes_the_surviving_chain() {
     let reregistered = fixture
         .engine
         .handle_meta(meta_signal_mirror::Input::RegisterStore(
-            meta_signal_mirror::StoreRegistration::new(meta_signal_mirror::StoreName::new(
-                "spirit".to_owned(),
-            )),
+            meta_signal_mirror::StoreRegistration {
+                store: meta_signal_mirror::StoreName::new("spirit".to_owned()),
+                addressing: meta_signal_mirror::ContentAddressing::Opaque,
+            },
         ));
     assert!(matches!(
         reregistered,
@@ -485,9 +492,10 @@ async fn separator_bearing_store_name_is_refused_at_registration() {
     let refused = fixture
         .engine
         .handle_meta(meta_signal_mirror::Input::RegisterStore(
-            meta_signal_mirror::StoreRegistration::new(meta_signal_mirror::StoreName::new(
-                "spirit/evil".to_owned(),
-            )),
+            meta_signal_mirror::StoreRegistration {
+                store: meta_signal_mirror::StoreName::new("spirit/evil".to_owned()),
+                addressing: meta_signal_mirror::ContentAddressing::Opaque,
+            },
         ));
     match refused {
         meta_signal_mirror::Output::OrderRejected(rejection) => {

@@ -52,4 +52,16 @@ impl<'octets> LandedBody<'octets> {
         );
         Ok(rederived.entry_digest())
     }
+
+    /// Whether this body content-addresses to `digest`. Both failure
+    /// modes collapse into one normal case: a body that decodes but
+    /// re-derives a different digest, and a body that does not decode at
+    /// all, both answer `false` — never a panic. This is the append-time
+    /// twin of the post-landing verifier's check
+    /// (`mirror-landed-body-verifier`), re-deriving through sema-engine's
+    /// own content-addressing.
+    pub fn addresses_to(&self, digest: &signal_mirror::EntryDigest) -> bool {
+        self.content_address()
+            .is_ok_and(|rederived| rederived.bytes() == digest.as_bytes())
+    }
 }
