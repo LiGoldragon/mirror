@@ -6,6 +6,17 @@ contract): the payload-blind sema version-control remote. It cites
 `primary/skills/component-triad.md` and states only the component-specific
 shape below.
 
+## 0.5 · Direction
+
+`mirror` is the payload-blind append-ingest mirror daemon — the sema version-control remote, serving every component store from one daemon. The psyche authorized three repos (mirror, signal-mirror, meta-signal-mirror) for this triad (Spirit `0yx5`).
+
+Key psyche decisions shaping this daemon:
+- Cross-host transport is a tailnet-bound TCP listener in triad-runtime, reusing the length-prefixed frame codec, with typed peer identity distinguishing Unix-socket from tailnet TCP peers. SSH-forwarded sockets are rejected as a transport shape (Spirit `rj9y`).
+- Component Sema databases must be backed up atomically; state loss is unacceptable. The mechanism is native version-controlled component databases with strict-typed hard-migration per schema change (Spirit `29pb`).
+- One consistent cryptographic basis — blake3 for content addressing, criome BLS for signing and attesting history — spans the whole backup system; no component diverges (Spirit `x0ja`).
+
+Retention enforcement and BLS attestation are deferred by decision in this cut; the vocabulary and placeholders are present but not enforced.
+
 ## Runtime triad
 
 The daemon is schema-derived on the emitted daemon runtime. The working
