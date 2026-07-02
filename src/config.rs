@@ -5,6 +5,14 @@
 //! binary rkyv startup argument and wraps it here so the daemon crate can
 //! implement `triad_runtime::BindingSurface` (a foreign trait on a foreign
 //! type otherwise) and pre-parse the tailnet listen address once.
+//!
+//! The trust boundary for the TCP ingress (Spirit rj9y) is enforced at the
+//! bind address: the daemon MUST bind to a specific tailnet interface, never to
+//! the unspecified address (0.0.0.0 / ::), which would accept connections from
+//! any reachable peer. Startup fails with [`ConfigurationError::ListenAddressUnspecified`]
+//! if the configured address is unspecified, so a misconfigured deployment is loud
+//! rather than silently open. A specific tailnet IP (e.g. `100.x.y.z:7474`)
+//! keeps the kernel as the trust boundary enforcer.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -48,12 +56,21 @@ impl TryFrom<DaemonConfiguration> for Configuration {
 
     fn try_from(contract: DaemonConfiguration) -> Result<Self, Self::Error> {
         let address = contract.tcp_listen_address.as_str();
-        let tcp_listen_address =
+        let tcp_listen_address: SocketAddr =
             address
                 .parse()
                 .map_err(|_| ConfigurationError::ListenAddressInvalid {
                     address: address.to_owned(),
                 })?;
+        // Enforce the tailnet trust boundary: an unspecified address (0.0.0.0 or
+        // ::) binds all interfaces and defeats the kernel-level isolation the
+        // tailnet bind provides. Reject it at startup so the misconfiguration is
+        // loud rather than silently exposing the ingress to every reachable peer.
+        if tcp_listen_address.ip().is_unspecified() {
+            return Err(ConfigurationError::ListenAddressUnspecified {
+                address: address.to_owned(),
+            });
+        }
         Ok(Self {
             contract,
             tcp_listen_address,
@@ -94,4 +111,55 @@ pub enum ConfigurationError {
 
     #[error("tcp listen address is not a socket address: {address}")]
     ListenAddressInvalid { address: String },
+
+    #[error(
+        "tcp listen address {address} is unspecified (0.0.0.0 or ::); \
+        configure the tailnet interface address to enforce the trust boundary"
+    )]
+    ListenAddressUnspecified { address: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use meta_signal_mirror::{DaemonConfiguration, ListenAddress, SocketMode, WirePath};
+
+    use super::*;
+
+    fn make_contract(tcp_address: &str) -> DaemonConfiguration {
+        DaemonConfiguration {
+            storage_path: WirePath::new("/tmp/mirror.sema"),
+            working_socket_path: WirePath::new("/tmp/mirror.sock"),
+            working_socket_mode: SocketMode::new(0o660),
+            meta_socket_path: WirePath::new("/tmp/mirror-meta.sock"),
+            meta_socket_mode: SocketMode::new(0o600),
+            tcp_listen_address: ListenAddress::new(tcp_address),
+        }
+    }
+
+    #[test]
+    fn rejects_ipv4_unspecified_address() {
+        let contract = make_contract("0.0.0.0:7474");
+        let result = Configuration::try_from(contract);
+        assert!(
+            matches!(result, Err(ConfigurationError::ListenAddressUnspecified { .. })),
+            "expected ListenAddressUnspecified, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_ipv6_unspecified_address() {
+        let contract = make_contract("[::]:7474");
+        let result = Configuration::try_from(contract);
+        assert!(
+            matches!(result, Err(ConfigurationError::ListenAddressUnspecified { .. })),
+            "expected ListenAddressUnspecified, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn accepts_specific_tailnet_address() {
+        let contract = make_contract("127.0.0.1:7474");
+        let result = Configuration::try_from(contract);
+        assert!(result.is_ok(), "expected Ok for loopback, got {result:?}");
+    }
 }
