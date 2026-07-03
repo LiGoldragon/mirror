@@ -48,18 +48,18 @@ nota-text = ["signal-mirror/nota-text", "meta-signal-mirror/nota-text"]
 witness = ["nota-text"]
 
 [dependencies]
-meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", branch = "main" }
+meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", branch = "drop-next" }
 nota          = { package = "nota", git = "https://github.com/LiGoldragon/nota.git", branch = "main" }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 sema-engine        = { git = "https://github.com/LiGoldragon/sema-engine.git", branch = "main" }
-signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main" }
-signal-mirror      = { git = "https://github.com/LiGoldragon/signal-mirror.git", branch = "main" }
+signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "drop-next" }
+signal-mirror      = { git = "https://github.com/LiGoldragon/signal-mirror.git", branch = "drop-next" }
 thiserror          = "2"
 tokio              = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
-triad-runtime      = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "main" }
+triad-runtime      = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "drop-next" }
 
 [build-dependencies]
-schema-rust = { package = "schema-rust", git = "https://github.com/LiGoldragon/schema-rust.git", branch = "main" }
+schema-rust = { package = "schema-rust", git = "https://github.com/LiGoldragon/schema-rust.git", branch = "drop-next" }
 
 [dev-dependencies]
 tempfile = "3"
