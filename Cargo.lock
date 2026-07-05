@@ -318,7 +318,7 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 [[package]]
 name = "meta-signal-mirror"
 version = "0.2.0"
-source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=drop-next#3004ccf63adadff622ebd0396c674a4250eed17c"
+source = "git+https://github.com/LiGoldragon/meta-signal-mirror.git?branch=drop-next#9a77f97f4afd9a2c50bca71f0de0fcf590ad7570"
 dependencies = [
  "nota",
  "rkyv",
@@ -570,7 +570,7 @@ dependencies = [
 [[package]]
 name = "schema-rust"
 version = "0.5.3"
-source = "git+https://github.com/LiGoldragon/schema-rust.git?branch=drop-next#94a0aa88a1d909b6f87cbf1431762c6fb0e19b71"
+source = "git+https://github.com/LiGoldragon/schema-rust.git?branch=drop-next#72c71ffc558fee0d29c5b0517013de46e0307597"
 dependencies = [
  "nota",
  "prettyplease",
@@ -687,7 +687,7 @@ dependencies = [
 [[package]]
 name = "signal-mirror"
 version = "0.1.1"
-source = "git+https://github.com/LiGoldragon/signal-mirror.git?branch=drop-next#920b67cba85e061af16e3effc581d72ab01835dc"
+source = "git+https://github.com/LiGoldragon/signal-mirror.git?branch=drop-next#0a8ab9afe57dc6ce55524e4da7b6b8ff1f59c9e9"
 dependencies = [
  "nota",
  "rkyv",
