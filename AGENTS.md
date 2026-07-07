@@ -1,14 +1,9 @@
 # mirror agent notes
 
-Read `/home/li/primary/AGENTS.md` first, then this repo's `INTENT.md` and
-`ARCHITECTURE.md`.
+Read this repo's `ARCHITECTURE.md` before editing.
 
 `mirror` is the daemon of the mirror triad — the payload-blind sema
 version-control remote (Spirit `0yx5`).
-
-Before editing daemon Rust, read `/home/li/primary/skills/component-triad.md`,
-`/home/li/primary/skills/actor-systems.md`, and
-`/home/li/primary/skills/kameo.md`.
 
 Load-bearing rules for this repo:
 
