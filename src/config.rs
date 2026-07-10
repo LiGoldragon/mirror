@@ -47,7 +47,7 @@ impl TryFrom<DaemonConfiguration> for Configuration {
     type Error = ConfigurationError;
 
     fn try_from(contract: DaemonConfiguration) -> Result<Self, Self::Error> {
-        let address = contract.tcp_listen_address.as_str();
+        let address = contract.listen_address.as_str();
         let tcp_listen_address =
             address
                 .parse()

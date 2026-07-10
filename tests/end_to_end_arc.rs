@@ -110,16 +110,22 @@ impl Restorer {
     }
 
     fn import(bundle: RestoreBundle, target: &mut ComponentEngine) {
-        let checkpoint =
-            PortableCheckpoint::from_bytes(bundle.checkpoint.artifact.payload().payload().to_vec())
-                .decode()
-                .expect("decode checkpoint artifact");
+        let checkpoint = PortableCheckpoint::from_bytes(
+            bundle
+                .checkpoint_artifact
+                .artifact_bytes
+                .payload()
+                .payload()
+                .to_vec(),
+        )
+        .decode()
+        .expect("decode checkpoint artifact");
         let suffix: Vec<VersionedCommitLogEntry> = bundle
             .suffix()
             .iter()
             .map(|envelope| {
                 rkyv::from_bytes::<VersionedCommitLogEntry, rkyv::rancor::Error>(
-                    envelope.payload.payload().payload(),
+                    envelope.payload_bytes.payload().payload(),
                 )
                 .expect("decode versioned entry payload")
             })
@@ -229,8 +235,8 @@ async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically
     let registered = link
         .meta(meta_signal_mirror::Input::RegisterStore(
             meta_signal_mirror::StoreRegistration {
-                store: meta_signal_mirror::StoreName::new(COMPONENT_STORE_NAME.to_owned()),
-                addressing: meta_signal_mirror::ContentAddressing::Opaque,
+                store_name: meta_signal_mirror::StoreName::new(COMPONENT_STORE_NAME.to_owned()),
+                content_addressing: meta_signal_mirror::ContentAddressing::Opaque,
             },
         ))
         .await
@@ -313,7 +319,7 @@ async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically
     match resend {
         Output::Appended(receipt) => {
             assert_eq!(
-                *receipt.head.sequence.payload(),
+                *receipt.head_mark.commit_sequence.payload(),
                 confirmed.commit_sequence().value()
             );
         }
@@ -379,8 +385,8 @@ async fn component_shipper_actor_ships_suffix_and_publishes_checkpoint() {
     let registered = link
         .meta(meta_signal_mirror::Input::RegisterStore(
             meta_signal_mirror::StoreRegistration {
-                store: meta_signal_mirror::StoreName::new(COMPONENT_STORE_NAME.to_owned()),
-                addressing: meta_signal_mirror::ContentAddressing::Opaque,
+                store_name: meta_signal_mirror::StoreName::new(COMPONENT_STORE_NAME.to_owned()),
+                content_addressing: meta_signal_mirror::ContentAddressing::Opaque,
             },
         ))
         .await
@@ -405,6 +411,6 @@ async fn component_shipper_actor_ships_suffix_and_publishes_checkpoint() {
         .ask(PublishLatestCheckpoint)
         .await
         .expect("shipper actor publishes checkpoint");
-    assert_eq!(*receipt.sequence.payload(), 1);
-    assert_eq!(*receipt.covered_end.payload(), 3);
+    assert_eq!(*receipt.checkpoint_sequence.payload(), 1);
+    assert_eq!(*receipt.commit_sequence.payload(), 3);
 }

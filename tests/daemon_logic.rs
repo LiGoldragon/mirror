@@ -38,8 +38,8 @@ impl Fixture {
             .engine
             .handle_meta(meta_signal_mirror::Input::RegisterStore(
                 meta_signal_mirror::StoreRegistration {
-                    store: meta_signal_mirror::StoreName::new(store_name.to_owned()),
-                    addressing: meta_signal_mirror::ContentAddressing::Opaque,
+                    store_name: meta_signal_mirror::StoreName::new(store_name.to_owned()),
+                    content_addressing: meta_signal_mirror::ContentAddressing::Opaque,
                 },
             ));
         assert!(matches!(
@@ -64,8 +64,8 @@ fn digest(seed: u8) -> EntryDigest {
 
 fn head(sequence: u64, seed: u8) -> HeadMark {
     HeadMark {
-        sequence: CommitSequence::new(sequence),
-        digest: digest(seed),
+        commit_sequence: CommitSequence::new(sequence),
+        entry_digest: digest(seed),
     }
 }
 
@@ -92,12 +92,25 @@ fn object_notice(store_name: &str, announced: HeadMark) -> Input {
 
 fn artifact(store_name: &str, sequence: u64, covered_end: u64) -> CheckpointArtifact {
     CheckpointArtifact {
-        store: store(store_name),
-        sequence: CheckpointSequence::new(sequence),
-        covered_end: CommitSequence::new(covered_end),
-        digest: ArtifactDigest::new(FixedBytes::new([0xcc; 32])),
-        artifact: ArtifactBytes::new(Bytes::new(vec![9, 9, 9])),
+        store_name: store(store_name),
+        checkpoint_sequence: CheckpointSequence::new(sequence),
+        commit_sequence: CommitSequence::new(covered_end),
+        artifact_digest: ArtifactDigest::new(FixedBytes::new([0xcc; 32])),
+        artifact_bytes: ArtifactBytes::new(Bytes::new(vec![9, 9, 9])),
     }
+}
+
+#[test]
+fn canonical_positional_fields_project_the_append_decision_noun() {
+    let suffix = NovelSuffix::new(
+        store("spirit"),
+        head(2, 0x22),
+        vec![envelope(2, Some(0x11), 0x22)],
+    );
+
+    assert_eq!(suffix.store_name, store("spirit"));
+    assert_eq!(suffix.head_mark, head(2, 0x22));
+    assert_eq!(suffix.entries().len(), 1);
 }
 
 #[tokio::test]
@@ -108,7 +121,10 @@ async fn append_to_unregistered_store_is_rejected_typed() {
         .await;
     match reply {
         Output::AppendRejected(rejection) => {
-            assert_eq!(rejection.reason, AppendRejectionReason::UnknownStore);
+            assert_eq!(
+                rejection.append_rejection_reason,
+                AppendRejectionReason::UnknownStore
+            );
         }
         other => panic!("expected AppendRejected, got {other:?}"),
     }
@@ -125,7 +141,7 @@ async fn append_with_matching_expected_head_is_accepted_and_head_advances() {
         ))
         .await;
     match first {
-        Output::Appended(receipt) => assert_eq!(receipt.head, head(2, 0x22)),
+        Output::Appended(receipt) => assert_eq!(receipt.head_mark, head(2, 0x22)),
         other => panic!("expected Appended, got {other:?}"),
     }
 
@@ -137,7 +153,7 @@ async fn append_with_matching_expected_head_is_accepted_and_head_advances() {
         ))
         .await;
     match second {
-        Output::Appended(receipt) => assert_eq!(receipt.head, head(3, 0x33)),
+        Output::Appended(receipt) => assert_eq!(receipt.head_mark, head(3, 0x33)),
         other => panic!("expected Appended, got {other:?}"),
     }
 
@@ -170,7 +186,7 @@ async fn duplicate_suffix_acknowledges_idempotently_without_duplicate_rows() {
     // versioned log gains no new entry — nothing was rewritten.
     let second = fixture.handle(append("spirit", None, suffix)).await;
     match second {
-        Output::Appended(receipt) => assert_eq!(receipt.head, head(2, 0x22)),
+        Output::Appended(receipt) => assert_eq!(receipt.head_mark, head(2, 0x22)),
         other => panic!("expected idempotent Appended, got {other:?}"),
     }
     let log_after_second = fixture
@@ -200,7 +216,7 @@ async fn partially_duplicate_resend_appends_only_the_novel_remainder() {
         ))
         .await;
     match resend {
-        Output::Appended(receipt) => assert_eq!(receipt.head, head(2, 0x22)),
+        Output::Appended(receipt) => assert_eq!(receipt.head_mark, head(2, 0x22)),
         other => panic!("expected Appended, got {other:?}"),
     }
 }
@@ -223,7 +239,10 @@ async fn sequence_gap_is_rejected_typed() {
         .await;
     match gapped {
         Output::AppendRejected(rejection) => {
-            assert_eq!(rejection.reason, AppendRejectionReason::SequenceGap);
+            assert_eq!(
+                rejection.append_rejection_reason,
+                AppendRejectionReason::SequenceGap
+            );
             assert_eq!(rejection.head().cloned(), Some(head(1, 0x11)));
         }
         other => panic!("expected AppendRejected, got {other:?}"),
@@ -249,7 +268,10 @@ async fn forked_history_is_rejected_typed() {
         .await;
     match forked {
         Output::AppendRejected(rejection) => {
-            assert_eq!(rejection.reason, AppendRejectionReason::HeadForked);
+            assert_eq!(
+                rejection.append_rejection_reason,
+                AppendRejectionReason::HeadForked
+            );
         }
         other => panic!("expected AppendRejected, got {other:?}"),
     }
@@ -261,7 +283,10 @@ async fn forked_history_is_rejected_typed() {
         .await;
     match divergent {
         Output::AppendRejected(rejection) => {
-            assert_eq!(rejection.reason, AppendRejectionReason::DigestMismatch);
+            assert_eq!(
+                rejection.append_rejection_reason,
+                AppendRejectionReason::DigestMismatch
+            );
         }
         other => panic!("expected AppendRejected, got {other:?}"),
     }
@@ -273,7 +298,10 @@ async fn empty_suffix_is_rejected_typed() {
     let reply = fixture.handle(append("spirit", None, Vec::new())).await;
     match reply {
         Output::AppendRejected(rejection) => {
-            assert_eq!(rejection.reason, AppendRejectionReason::EmptySuffix);
+            assert_eq!(
+                rejection.append_rejection_reason,
+                AppendRejectionReason::EmptySuffix
+            );
         }
         other => panic!("expected AppendRejected, got {other:?}"),
     }
@@ -309,7 +337,10 @@ async fn crash_window_resend_re_advances_the_head_and_the_store_stays_live() {
         .await;
     match divergent {
         Output::AppendRejected(rejection) => {
-            assert_eq!(rejection.reason, AppendRejectionReason::DigestMismatch);
+            assert_eq!(
+                rejection.append_rejection_reason,
+                AppendRejectionReason::DigestMismatch
+            );
         }
         other => panic!("expected AppendRejected, got {other:?}"),
     }
@@ -327,7 +358,7 @@ async fn crash_window_resend_re_advances_the_head_and_the_store_stays_live() {
         ))
         .await;
     match healed {
-        Output::Appended(receipt) => assert_eq!(receipt.head, head(2, 0x22)),
+        Output::Appended(receipt) => assert_eq!(receipt.head_mark, head(2, 0x22)),
         other => panic!("expected the re-send to heal the crash window, got {other:?}"),
     }
 
@@ -340,7 +371,7 @@ async fn crash_window_resend_re_advances_the_head_and_the_store_stays_live() {
         ))
         .await;
     match appended {
-        Output::Appended(receipt) => assert_eq!(receipt.head, head(3, 0x33)),
+        Output::Appended(receipt) => assert_eq!(receipt.head_mark, head(3, 0x33)),
         other => panic!("expected Appended after healing, got {other:?}"),
     }
 
@@ -387,8 +418,8 @@ async fn retire_then_reregister_resumes_the_surviving_chain() {
         .engine
         .handle_meta(meta_signal_mirror::Input::RegisterStore(
             meta_signal_mirror::StoreRegistration {
-                store: meta_signal_mirror::StoreName::new("spirit".to_owned()),
-                addressing: meta_signal_mirror::ContentAddressing::Opaque,
+                store_name: meta_signal_mirror::StoreName::new("spirit".to_owned()),
+                content_addressing: meta_signal_mirror::ContentAddressing::Opaque,
             },
         ));
     assert!(matches!(
@@ -415,7 +446,7 @@ async fn retire_then_reregister_resumes_the_surviving_chain() {
         ))
         .await;
     match resend {
-        Output::Appended(receipt) => assert_eq!(receipt.head, head(2, 0x22)),
+        Output::Appended(receipt) => assert_eq!(receipt.head_mark, head(2, 0x22)),
         other => panic!("expected idempotent Appended, got {other:?}"),
     }
 
@@ -428,7 +459,7 @@ async fn retire_then_reregister_resumes_the_surviving_chain() {
         ))
         .await;
     match appended {
-        Output::Appended(receipt) => assert_eq!(receipt.head, head(3, 0x33)),
+        Output::Appended(receipt) => assert_eq!(receipt.head_mark, head(3, 0x33)),
         other => panic!("expected Appended after resume, got {other:?}"),
     }
 }
@@ -439,7 +470,10 @@ async fn object_notice_for_unregistered_store_is_rejected_typed() {
     let reply = fixture.handle(object_notice("ghost", head(1, 0x11))).await;
     match reply {
         Output::ObjectNoticeRejected(rejection) => {
-            assert_eq!(rejection.reason, ObjectNoticeRejectionReason::UnknownStore);
+            assert_eq!(
+                rejection.object_notice_rejection_reason,
+                ObjectNoticeRejectionReason::UnknownStore
+            );
             assert_eq!(rejection.head(), None);
         }
         other => panic!("expected ObjectNoticeRejected, got {other:?}"),
@@ -461,8 +495,8 @@ async fn object_notice_for_known_head_is_accepted() {
     let reply = fixture.handle(object_notice("spirit", head(2, 0x22))).await;
     match reply {
         Output::ObjectNoticeAccepted(receipt) => {
-            assert_eq!(receipt.store, store("spirit"));
-            assert_eq!(receipt.head, head(2, 0x22));
+            assert_eq!(receipt.store_name, store("spirit"));
+            assert_eq!(receipt.head_mark, head(2, 0x22));
         }
         other => panic!("expected ObjectNoticeAccepted, got {other:?}"),
     }
@@ -479,7 +513,10 @@ async fn object_notice_for_missing_head_reports_current_head() {
     let reply = fixture.handle(object_notice("spirit", head(2, 0x22))).await;
     match reply {
         Output::ObjectNoticeRejected(rejection) => {
-            assert_eq!(rejection.reason, ObjectNoticeRejectionReason::HeadBehind);
+            assert_eq!(
+                rejection.object_notice_rejection_reason,
+                ObjectNoticeRejectionReason::HeadBehind
+            );
             assert_eq!(rejection.head().cloned(), Some(head(1, 0x11)));
         }
         other => panic!("expected ObjectNoticeRejected, got {other:?}"),
@@ -493,14 +530,14 @@ async fn separator_bearing_store_name_is_refused_at_registration() {
         .engine
         .handle_meta(meta_signal_mirror::Input::RegisterStore(
             meta_signal_mirror::StoreRegistration {
-                store: meta_signal_mirror::StoreName::new("spirit/evil".to_owned()),
-                addressing: meta_signal_mirror::ContentAddressing::Opaque,
+                store_name: meta_signal_mirror::StoreName::new("spirit/evil".to_owned()),
+                content_addressing: meta_signal_mirror::ContentAddressing::Opaque,
             },
         ));
     match refused {
         meta_signal_mirror::Output::OrderRejected(rejection) => {
             assert_eq!(
-                rejection.reason,
+                rejection.order_rejection_reason,
                 meta_signal_mirror::OrderRejectionReason::StoreNameInvalid
             );
         }
@@ -542,7 +579,7 @@ async fn restore_returns_checkpoint_plus_suffix_past_its_coverage() {
         .await;
     match restored {
         Output::Restored(bundle) => {
-            assert_eq!(bundle.checkpoint, artifact("spirit", 1, 2));
+            assert_eq!(bundle.checkpoint_artifact, artifact("spirit", 1, 2));
             assert_eq!(bundle.suffix(), [envelope(3, Some(0x22), 0x33)]);
         }
         other => panic!("expected Restored, got {other:?}"),
@@ -557,7 +594,10 @@ async fn restore_without_checkpoint_is_rejected_typed() {
         .await;
     match reply {
         Output::RestoreRejected(rejection) => {
-            assert_eq!(rejection.reason, RestoreRejectionReason::NoCheckpoint);
+            assert_eq!(
+                rejection.restore_rejection_reason,
+                RestoreRejectionReason::NoCheckpoint
+            );
         }
         other => panic!("expected RestoreRejected, got {other:?}"),
     }

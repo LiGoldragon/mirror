@@ -4,7 +4,7 @@
 //! lands the same tampered body unchanged.
 //!
 //! The canonical attack this proves the mirror now catches: a body whose carried
-//! `EntryEnvelope.digest` chains correctly (genesis sequence 1, no previous
+//! `EntryEnvelope.entry_digest` chains correctly (genesis sequence 1, no previous
 //! digest) but whose `payload` is the rkyv body of a DIFFERENT genuine entry, so
 //! it does not hash to the carried digest. The three linkage guards
 //! (`suffix_inconsistency`, `expected_head_violation`, `known_divergence`) all
@@ -104,8 +104,8 @@ fn store(name: &str) -> StoreName {
 fn register(engine: &mut Engine, name: &str, addressing: meta_signal_mirror::ContentAddressing) {
     let registered = engine.handle_meta(meta_signal_mirror::Input::RegisterStore(
         meta_signal_mirror::StoreRegistration {
-            store: meta_signal_mirror::StoreName::new(name.to_owned()),
-            addressing,
+            store_name: meta_signal_mirror::StoreName::new(name.to_owned()),
+            content_addressing: addressing,
         },
     ));
     assert!(
@@ -171,13 +171,13 @@ async fn refuses_mismatched_body_and_lands_matching_body() {
         CommitSequence::new(1),
         None,
         EntryDigest::new(FixedBytes::new(*real_head.bytes())),
-        PayloadBytes::new(Bytes::new(other.payload.as_slice().to_vec())),
+        PayloadBytes::new(Bytes::new(other.payload_bytes.as_slice().to_vec())),
     );
     // The tampered body does decode — it is a genuine versioned-log entry — but
     // to the OTHER head, not the carried one. That is the silent corruption the
     // append-time guard must catch.
     assert_eq!(
-        LandedBody::new(tampered.payload.as_slice())
+        LandedBody::new(tampered.payload_bytes.as_slice())
             .content_address()
             .expect("the tampered body is itself a genuine versioned-log entry"),
         other_head,
@@ -190,7 +190,7 @@ async fn refuses_mismatched_body_and_lands_matching_body() {
         .await;
     match refused {
         Output::AppendRejected(rejection) => assert_eq!(
-            rejection.reason,
+            rejection.append_rejection_reason,
             signal_mirror::AppendRejectionReason::DigestMismatch,
             "the tampered body is refused as a digest mismatch"
         ),
@@ -223,7 +223,7 @@ async fn refuses_mismatched_body_and_lands_matching_body() {
         .expect("landed entries read");
     assert_eq!(landed.len(), 1, "exactly the faithful genesis landed");
     assert_eq!(
-        LandedBody::new(landed[0].payload.as_slice())
+        LandedBody::new(landed[0].payload_bytes.as_slice())
             .content_address()
             .expect("the landed body is a genuine versioned-log entry"),
         real_head,

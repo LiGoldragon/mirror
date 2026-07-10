@@ -30,9 +30,9 @@ impl CommandLine {
     pub fn run(&self) -> Result<Written, WriterError> {
         let text = self.source_text()?;
         let request: ConfigurationWrite = NotaSource::new(&text).parse()?;
-        let destination = request.destination.clone();
+        let destination = request.wire_path.clone();
         request
-            .configuration
+            .daemon_configuration
             .write_binary_file(destination.as_path())?;
         Ok(Written::ConfigurationWritten(destination))
     }

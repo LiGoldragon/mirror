@@ -25,10 +25,11 @@ use signal_mirror::{
 
 use crate::error::Result;
 use crate::schema::sema::{
-    Bytes, CheckedAppend, CheckedCheckpoint, CheckedObjectNotice, ContentAddressing, DigestBytes,
-    Entries, HeadStamp, KnownEntries, KnownEntry, LatestCheckpoint, LedgerHead, NovelSuffix,
-    PreviousDigest, ReceivedEntry, RecordFamily, RegisteredLedger, RetentionRule, RetentionSetting,
-    Scope, StoreLedger, StorePolicy, StoredCheckpoint, StoredHead, StoredHeadStamp,
+    Bytes, CheckedAppend, CheckedCheckpoint, CheckedObjectNotice, ContentAddressing,
+    CoveredEndSequence, DigestBytes, Entries, HeadStamp, KnownEntries, KnownEntry,
+    LatestCheckpoint, LedgerHead, NovelSuffix, PreviousDigest, ReceivedEntry, RecordFamily,
+    RegisteredLedger, RetentionRule, RetentionSetting, Scope, StoreLedger, StorePolicy,
+    StoredCheckpoint, StoredCheckpointSequence, StoredHead, StoredHeadStamp,
 };
 
 /// Key separator between a store name and an ordering suffix. Component
@@ -42,7 +43,7 @@ const SEQUENCE_KEY_WIDTH: usize = 20;
 
 impl EngineRecord for StoredHead {
     fn record_key(&self) -> RecordKey {
-        RecordKey::new(self.store.clone())
+        RecordKey::new(self.string.clone())
     }
 }
 
@@ -50,9 +51,9 @@ impl EngineRecord for ReceivedEntry {
     fn record_key(&self) -> RecordKey {
         RecordKey::new(format!(
             "{}{}{:0width$}",
-            self.store,
+            self.string,
             KEY_SEPARATOR,
-            self.sequence,
+            self.integer,
             width = SEQUENCE_KEY_WIDTH
         ))
     }
@@ -62,9 +63,9 @@ impl EngineRecord for StoredCheckpoint {
     fn record_key(&self) -> RecordKey {
         RecordKey::new(format!(
             "{}{}{:0width$}",
-            self.store,
+            self.string,
             KEY_SEPARATOR,
-            self.sequence,
+            self.stored_checkpoint_sequence.payload(),
             width = SEQUENCE_KEY_WIDTH
         ))
     }
@@ -81,7 +82,7 @@ impl EngineRecord for RetentionSetting {
 
 impl EngineRecord for StorePolicy {
     fn record_key(&self) -> RecordKey {
-        RecordKey::new(self.store.clone())
+        RecordKey::new(self.string.clone())
     }
 }
 
@@ -100,10 +101,10 @@ impl ContentAddressing {
 }
 
 impl NovelSuffix {
-    pub fn new(store: StoreName, head: HeadMark, entries: Vec<EntryEnvelope>) -> Self {
+    pub fn new(store_name: StoreName, head_mark: HeadMark, entries: Vec<EntryEnvelope>) -> Self {
         Self {
-            store,
-            head,
+            store_name,
+            head_mark,
             entries: Entries::new(entries),
         }
     }
@@ -124,7 +125,7 @@ impl RegisteredLedger {
             ledger_head: LedgerHead::new(head),
             known_entries: KnownEntries::new(known),
             latest_checkpoint: LatestCheckpoint::new(latest_checkpoint),
-            addressing,
+            content_addressing: addressing,
         }
     }
 
@@ -144,14 +145,14 @@ impl RegisteredLedger {
     /// the policy family existed has no row and reads as `Opaque`, so
     /// the append guard is a no-op for it — absence is the normal case.
     pub fn addressing(&self) -> ContentAddressing {
-        self.addressing
+        self.content_addressing
     }
 }
 
 impl StoredHead {
     pub fn new(store: String, head: Option<HeadStamp>) -> Self {
         Self {
-            store,
+            string: store,
             stored_head_stamp: StoredHeadStamp::new(head),
         }
     }
@@ -182,15 +183,15 @@ impl DigestBytes {
 impl HeadStamp {
     pub fn from_mark(mark: &HeadMark) -> Self {
         Self {
-            sequence: mark.sequence.clone().into_u64(),
-            digest: DigestBytes::from_entry_digest(&mark.digest),
+            integer: mark.commit_sequence.clone().into_u64(),
+            digest_bytes: DigestBytes::from_entry_digest(&mark.entry_digest),
         }
     }
 
     pub fn to_mark(&self) -> HeadMark {
         HeadMark {
-            sequence: CommitSequence::new(self.sequence),
-            digest: self.digest.to_entry_digest(),
+            commit_sequence: CommitSequence::new(self.integer),
+            entry_digest: self.digest_bytes.to_entry_digest(),
         }
     }
 }
@@ -198,24 +199,24 @@ impl HeadStamp {
 impl ReceivedEntry {
     pub fn from_envelope(store: &StoreName, envelope: &EntryEnvelope) -> Self {
         Self {
-            store: store.as_str().to_owned(),
-            sequence: envelope.sequence.clone().into_u64(),
+            string: store.as_str().to_owned(),
+            integer: envelope.commit_sequence.clone().into_u64(),
             previous_digest: PreviousDigest::new(
                 envelope
                     .previous_digest()
                     .map(DigestBytes::from_entry_digest),
             ),
-            digest: DigestBytes::from_entry_digest(&envelope.digest),
-            payload: Bytes::new(envelope.payload.as_slice().to_vec()),
+            digest_bytes: DigestBytes::from_entry_digest(&envelope.entry_digest),
+            bytes: Bytes::new(envelope.payload_bytes.as_slice().to_vec()),
         }
     }
 
     pub fn to_envelope(&self) -> EntryEnvelope {
         EntryEnvelope::new(
-            CommitSequence::new(self.sequence),
+            CommitSequence::new(self.integer),
             self.previous_digest().map(DigestBytes::to_entry_digest),
-            self.digest.to_entry_digest(),
-            PayloadBytes::new(signal_mirror::Bytes::new(self.payload.payload().to_vec())),
+            self.digest_bytes.to_entry_digest(),
+            PayloadBytes::new(signal_mirror::Bytes::new(self.bytes.payload().to_vec())),
         )
     }
 
@@ -225,15 +226,15 @@ impl ReceivedEntry {
 
     pub fn to_known_entry(&self) -> KnownEntry {
         KnownEntry {
-            sequence: CommitSequence::new(self.sequence),
-            digest: self.digest.to_entry_digest(),
+            commit_sequence: CommitSequence::new(self.integer),
+            entry_digest: self.digest_bytes.to_entry_digest(),
         }
     }
 
     pub fn to_head_stamp(&self) -> HeadStamp {
         HeadStamp {
-            sequence: self.sequence,
-            digest: self.digest.clone(),
+            integer: self.integer,
+            digest_bytes: self.digest_bytes.clone(),
         }
     }
 }
@@ -241,31 +242,39 @@ impl ReceivedEntry {
 impl StoredCheckpoint {
     pub fn from_artifact(artifact: &CheckpointArtifact) -> Self {
         Self {
-            store: artifact.store.as_str().to_owned(),
-            sequence: artifact.sequence.clone().into_u64(),
-            covered_end: artifact.covered_end.clone().into_u64(),
-            digest: DigestBytes::from_artifact_digest(&artifact.digest),
-            artifact: Bytes::new(artifact.artifact.as_slice().to_vec()),
+            string: artifact.store_name.as_str().to_owned(),
+            stored_checkpoint_sequence: StoredCheckpointSequence::new(
+                artifact.checkpoint_sequence.clone().into_u64(),
+            ),
+            covered_end_sequence: CoveredEndSequence::new(
+                artifact.commit_sequence.clone().into_u64(),
+            ),
+            digest_bytes: DigestBytes::from_artifact_digest(&artifact.artifact_digest),
+            bytes: Bytes::new(artifact.artifact_bytes.as_slice().to_vec()),
         }
     }
 
     pub fn to_artifact(&self) -> CheckpointArtifact {
         CheckpointArtifact {
-            store: StoreName::new(self.store.clone()),
-            sequence: signal_mirror::CheckpointSequence::new(self.sequence),
-            covered_end: CommitSequence::new(self.covered_end),
-            digest: self.digest.to_artifact_digest(),
-            artifact: ArtifactBytes::new(signal_mirror::Bytes::new(
-                self.artifact.payload().to_vec(),
+            store_name: StoreName::new(self.string.clone()),
+            checkpoint_sequence: signal_mirror::CheckpointSequence::new(
+                *self.stored_checkpoint_sequence.payload(),
+            ),
+            commit_sequence: CommitSequence::new(*self.covered_end_sequence.payload()),
+            artifact_digest: self.digest_bytes.to_artifact_digest(),
+            artifact_bytes: ArtifactBytes::new(signal_mirror::Bytes::new(
+                self.bytes.payload().to_vec(),
             )),
         }
     }
 
     pub fn to_receipt(&self) -> CheckpointReceipt {
         CheckpointReceipt {
-            store: StoreName::new(self.store.clone()),
-            sequence: signal_mirror::CheckpointSequence::new(self.sequence),
-            covered_end: CommitSequence::new(self.covered_end),
+            store_name: StoreName::new(self.string.clone()),
+            checkpoint_sequence: signal_mirror::CheckpointSequence::new(
+                *self.stored_checkpoint_sequence.payload(),
+            ),
+            commit_sequence: CommitSequence::new(*self.covered_end_sequence.payload()),
         }
     }
 }
@@ -273,11 +282,11 @@ impl StoredCheckpoint {
 impl RetentionSetting {
     pub fn from_order(order: &meta_signal_mirror::RetentionOrder) -> Self {
         Self {
-            scope: Scope::new(match &order.scope {
+            scope: Scope::new(match &order.retention_scope {
                 meta_signal_mirror::RetentionScope::Store(store) => Some(store.as_str().to_owned()),
                 meta_signal_mirror::RetentionScope::AllStores => None,
             }),
-            rule: match &order.rule {
+            retention_rule: match &order.retention_rule {
                 meta_signal_mirror::RetentionRule::KeepEverything => RetentionRule::KeepEverything,
                 meta_signal_mirror::RetentionRule::KeepLatestCheckpoints(count) => {
                     RetentionRule::KeepLatestCheckpoints(crate::schema::sema::KeepCount::new(
@@ -396,7 +405,7 @@ impl Store {
         };
         let addressing = self
             .policy_row(store)?
-            .map(|policy| policy.addressing)
+            .map(|policy| policy.content_addressing)
             .unwrap_or(ContentAddressing::Opaque);
         Ok(StoreLedger::Registered(RegisteredLedger::new(
             head_row.head().map(HeadStamp::to_mark),
@@ -413,22 +422,28 @@ impl Store {
     /// verify the expected head against stored digests.
     pub fn check_append(&self, request: EntrySuffix) -> Result<CheckedAppend> {
         let range = request.entries().first().map(|first| {
-            let first_sequence = first.sequence.clone().into_u64();
+            let first_sequence = first.commit_sequence.clone().into_u64();
             let last_sequence = request
                 .entries()
                 .last()
-                .map(|entry| entry.sequence.clone().into_u64())
+                .map(|entry| entry.commit_sequence.clone().into_u64())
                 .unwrap_or(first_sequence);
             (first_sequence.saturating_sub(1), last_sequence)
         });
-        let ledger = self.load_ledger(&request.store, range)?;
-        Ok(CheckedAppend { request, ledger })
+        let ledger = self.load_ledger(&request.store_name, range)?;
+        Ok(CheckedAppend {
+            entry_suffix: request,
+            store_ledger: ledger,
+        })
     }
 
     /// Look up ledger state for a pending checkpoint publication.
     pub fn check_checkpoint(&self, artifact: CheckpointArtifact) -> Result<CheckedCheckpoint> {
-        let ledger = self.load_ledger(&artifact.store, None)?;
-        Ok(CheckedCheckpoint { artifact, ledger })
+        let ledger = self.load_ledger(&artifact.store_name, None)?;
+        Ok(CheckedCheckpoint {
+            checkpoint_artifact: artifact,
+            store_ledger: ledger,
+        })
     }
 
     /// Look up ledger state for a routed-object notice. The known range
@@ -436,9 +451,12 @@ impl Store {
     /// this mirror already holds that content-addressed head, not merely
     /// a higher sequence number with an unknown ancestry.
     pub fn check_object_notice(&self, notice: ObjectNotice) -> Result<CheckedObjectNotice> {
-        let sequence = notice.head.sequence.clone().into_u64();
-        let ledger = self.load_ledger(&notice.store, Some((sequence, sequence)))?;
-        Ok(CheckedObjectNotice { notice, ledger })
+        let sequence = notice.head_mark.commit_sequence.clone().into_u64();
+        let ledger = self.load_ledger(&notice.store_name, Some((sequence, sequence)))?;
+        Ok(CheckedObjectNotice {
+            object_notice: notice,
+            store_ledger: ledger,
+        })
     }
 
     /// Persist a validated novel suffix: every entry row in one commit,
@@ -464,7 +482,7 @@ impl Store {
     pub fn commit_entry_rows(&mut self, suffix: &NovelSuffix) -> Result<()> {
         let mut commit = CommitRequest::new(self.entries);
         for envelope in suffix.entries() {
-            commit = commit.assert(ReceivedEntry::from_envelope(&suffix.store, envelope));
+            commit = commit.assert(ReceivedEntry::from_envelope(&suffix.store_name, envelope));
         }
         self.engine.commit(commit)?;
         Ok(())
@@ -476,13 +494,13 @@ impl Store {
         self.engine.mutate(Mutation::new(
             self.heads,
             StoredHead::new(
-                suffix.store.as_str().to_owned(),
-                Some(HeadStamp::from_mark(&suffix.head)),
+                suffix.store_name.as_str().to_owned(),
+                Some(HeadStamp::from_mark(&suffix.head_mark)),
             ),
         ))?;
         Ok(AppendReceipt {
-            store: suffix.store.clone(),
-            head: suffix.head.clone(),
+            store_name: suffix.store_name.clone(),
+            head_mark: suffix.head_mark.clone(),
         })
     }
 
@@ -533,8 +551,8 @@ impl Store {
         // row) mutates it to the newly chosen addressing. The head above
         // is always a fresh assert because retire retracts it.
         self.upsert_policy(StorePolicy {
-            store: store.as_str().to_owned(),
-            addressing,
+            string: store.as_str().to_owned(),
+            content_addressing: addressing,
         })?;
         Ok(())
     }
@@ -591,19 +609,19 @@ impl Store {
         let store = query.payload();
         if self.head_row(store)?.is_none() {
             return Ok(Err(RestoreRejection {
-                store: store.clone(),
-                reason: RestoreRejectionReason::UnknownStore,
+                store_name: store.clone(),
+                restore_rejection_reason: RestoreRejectionReason::UnknownStore,
             }));
         }
         let Some(checkpoint_row) = self.latest_checkpoint_row(store)? else {
             return Ok(Err(RestoreRejection {
-                store: store.clone(),
-                reason: RestoreRejectionReason::NoCheckpoint,
+                store_name: store.clone(),
+                restore_rejection_reason: RestoreRejectionReason::NoCheckpoint,
             }));
         };
         let suffix: Vec<EntryEnvelope> = self
             .entry_rows(KeyRange::between(
-                Self::sequence_key(store, checkpoint_row.covered_end + 1),
+                Self::sequence_key(store, *checkpoint_row.covered_end_sequence.payload() + 1),
                 Self::sequence_key(store, u64::MAX),
             ))?
             .iter()
@@ -649,7 +667,7 @@ impl Store {
             rows.iter()
                 .map(|row| {
                     StoreHead::new(
-                        StoreName::new(row.store.clone()),
+                        StoreName::new(row.string.clone()),
                         row.head().map(HeadStamp::to_mark),
                     )
                 })
@@ -665,7 +683,7 @@ impl Store {
                 .iter()
                 .map(|row| {
                     meta_signal_mirror::RegisteredStore::new(meta_signal_mirror::StoreName::new(
-                        row.store.clone(),
+                        row.string.clone(),
                     ))
                 })
                 .collect(),

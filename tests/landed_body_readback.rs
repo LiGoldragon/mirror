@@ -58,7 +58,7 @@ impl sema_engine::EngineRecord for WitnessRecord {
 /// envelope the mirror lands for it — the rkyv `VersionedCommitLogEntry` as the
 /// body and the entry's own content address as the carried digest — plus the
 /// head digest the store reports (the value Spirit's `ObserveHead` returns).
-fn real_genesis_envelope(store: &str) -> (EntryEnvelope, sema_engine::EntryDigest) {
+fn real_genesis_envelope(store_name: &str) -> (EntryEnvelope, sema_engine::EntryDigest) {
     let directory = tempfile::tempdir().expect("source store directory");
     let mut engine = sema_engine::Engine::open(
         sema_engine::EngineOpen::new(
@@ -66,7 +66,7 @@ fn real_genesis_envelope(store: &str) -> (EntryEnvelope, sema_engine::EntryDiges
             sema_engine::SchemaVersion::new(1),
         )
         .with_versioning(sema_engine::VersioningPolicy::new(
-            sema_engine::VersionedStoreName::new(store),
+            sema_engine::VersionedStoreName::new(store_name),
         )),
     )
     .expect("source component engine opens");
@@ -118,8 +118,8 @@ impl Mirror {
         let mut engine = Engine::new(store);
         let registered = engine.handle_meta(meta_signal_mirror::Input::RegisterStore(
             meta_signal_mirror::StoreRegistration {
-                store: meta_signal_mirror::StoreName::new(store_name.to_owned()),
-                addressing: meta_signal_mirror::ContentAddressing::Opaque,
+                store_name: meta_signal_mirror::StoreName::new(store_name.to_owned()),
+                content_addressing: meta_signal_mirror::ContentAddressing::Opaque,
             },
         ));
         assert!(matches!(
@@ -143,11 +143,11 @@ impl Mirror {
 /// a registered store with no prior checkpoint.
 fn zero_coverage_checkpoint(store_name: &str) -> Input {
     Input::PublishCheckpoint(CheckpointArtifact {
-        store: StoreName::new(store_name.to_owned()),
-        sequence: CheckpointSequence::new(1),
-        covered_end: CommitSequence::new(0),
-        digest: ArtifactDigest::new(FixedBytes::new([0xcc; 32])),
-        artifact: ArtifactBytes::new(Bytes::new(Vec::new())),
+        store_name: StoreName::new(store_name.to_owned()),
+        checkpoint_sequence: CheckpointSequence::new(1),
+        commit_sequence: CommitSequence::new(0),
+        artifact_digest: ArtifactDigest::new(FixedBytes::new([0xcc; 32])),
+        artifact_bytes: ArtifactBytes::new(Bytes::new(Vec::new())),
     })
 }
 
@@ -155,7 +155,7 @@ fn zero_coverage_checkpoint(store_name: &str) -> Input {
 async fn restore_hands_back_the_landed_genesis_body_which_rehashes_to_the_head() {
     let store_name = "spirit";
     let (envelope, real_head) = real_genesis_envelope(store_name);
-    let shipped_body = envelope.payload.as_slice().to_vec();
+    let shipped_body = envelope.payload_bytes.as_slice().to_vec();
     assert_ne!(
         shipped_body,
         b"criome-verified durable append".to_vec(),
@@ -203,12 +203,12 @@ async fn restore_hands_back_the_landed_genesis_body_which_rehashes_to_the_head()
     );
     let landed = &suffix[0];
     assert_eq!(
-        landed.sequence,
+        landed.commit_sequence,
         CommitSequence::new(1),
         "the restored entry is the genesis"
     );
     assert_eq!(
-        landed.payload.as_slice(),
+        landed.payload_bytes.as_slice(),
         shipped_body.as_slice(),
         "Restore handed back the EXACT landed body — the real entry, intact"
     );
@@ -216,7 +216,7 @@ async fn restore_hands_back_the_landed_genesis_body_which_rehashes_to_the_head()
     // THE PROOF: re-derive the content address from the body read back over the
     // wire, reproducing the head — sema-engine's own content-addressing, through
     // the SAME `LandedBody::content_address` the two-VM witness verifier bin uses.
-    let rederived = LandedBody::new(landed.payload.as_slice())
+    let rederived = LandedBody::new(landed.payload_bytes.as_slice())
         .content_address()
         .expect("the restored body is a genuine rkyv VersionedCommitLogEntry");
     assert_eq!(
@@ -224,7 +224,7 @@ async fn restore_hands_back_the_landed_genesis_body_which_rehashes_to_the_head()
         "re-deriving the digest from the RESTORED body reproduces the record's real head"
     );
     assert_eq!(
-        landed.digest.as_bytes(),
+        landed.entry_digest.as_bytes(),
         rederived.bytes(),
         "the landed head digest is the genuine content address of the body Restore handed back"
     );

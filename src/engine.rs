@@ -96,7 +96,8 @@ impl Engine {
         &mut self,
         registration: meta_signal_mirror::StoreRegistration,
     ) -> meta_signal_mirror::Output {
-        let working_name = signal_mirror::StoreName::new(registration.store.as_str().to_owned());
+        let working_name =
+            signal_mirror::StoreName::new(registration.store_name.as_str().to_owned());
         if !Store::name_is_keyable(&working_name) {
             return Self::meta_rejection(
                 OrderRejectionReason::StoreNameInvalid,
@@ -107,7 +108,7 @@ impl Engine {
             Ok(listing) => listing,
             Err(rejection) => return rejection,
         };
-        if Self::registry_holds(&listing, &registration.store) {
+        if Self::registry_holds(&listing, &registration.store_name) {
             return Self::meta_rejection(
                 OrderRejectionReason::StoreAlreadyRegistered,
                 "store is already registered",
@@ -216,8 +217,8 @@ impl Engine {
 
     fn meta_rejection(reason: OrderRejectionReason, detail: &str) -> meta_signal_mirror::Output {
         meta_signal_mirror::Output::OrderRejected(OrderRejection {
-            reason,
-            detail: RejectionDetail::new(detail.to_owned()),
+            order_rejection_reason: reason,
+            rejection_detail: RejectionDetail::new(detail.to_owned()),
         })
     }
 
@@ -428,9 +429,10 @@ impl SemaEngine for Engine {
                 .map(WriteOutput::CheckpointPersisted)
                 .unwrap_or_else(WriteOutput::from_fault),
             WriteInput::RegisterStore(registration) => {
-                let store = registration.store.clone();
-                let addressing =
-                    crate::schema::sema::ContentAddressing::from_meta(&registration.addressing);
+                let store = registration.store_name.clone();
+                let addressing = crate::schema::sema::ContentAddressing::from_meta(
+                    &registration.content_addressing,
+                );
                 self.store
                     .register_store(
                         &signal_mirror::StoreName::new(store.as_str().to_owned()),
@@ -457,8 +459,8 @@ impl SemaEngine for Engine {
                 .persist_retention(&order)
                 .map(|()| {
                     WriteOutput::RetentionPersisted(meta_signal_mirror::RetentionReceipt {
-                        scope: order.scope,
-                        rule: order.rule,
+                        retention_scope: order.retention_scope,
+                        retention_rule: order.retention_rule,
                     })
                 })
                 .unwrap_or_else(WriteOutput::from_fault),

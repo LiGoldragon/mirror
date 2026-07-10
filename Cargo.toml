@@ -59,7 +59,7 @@ tokio              = { version = "1", features = ["io-util", "macros", "net", "r
 triad-runtime      = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "main" }
 
 [build-dependencies]
-schema-rust = { package = "schema-rust", git = "https://github.com/LiGoldragon/schema-rust.git", branch = "main" }
+schema-rust = { package = "schema-rust", git = "https://github.com/LiGoldragon/schema-rust.git", rev = "255823ab3d0d6c5cab26e26a8b1d60c63c52c7b4" }
 
 [dev-dependencies]
 tempfile = "3"

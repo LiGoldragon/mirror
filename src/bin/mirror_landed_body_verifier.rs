@@ -119,7 +119,7 @@ impl LandedBodyVerifier {
             other => return Err(VerifyError::UnexpectedReply(format!("{other:?}"))),
         };
         let landed = bundle.suffix().first().ok_or(VerifyError::EmptySuffix)?;
-        let body = landed.payload.as_slice();
+        let body = landed.payload_bytes.as_slice();
 
         let rederived = LandedBody::new(body).content_address()?;
         let expected_hex = Self::hex(&self.expected);
@@ -130,7 +130,7 @@ impl LandedBodyVerifier {
             });
         }
 
-        let carried = landed.digest.as_bytes();
+        let carried = landed.entry_digest.as_bytes();
         if carried != &self.expected {
             return Err(VerifyError::CarriedMismatch {
                 carried: Self::hex(carried),

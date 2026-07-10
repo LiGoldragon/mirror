@@ -167,8 +167,8 @@ impl ComponentShipper {
 
     pub fn expected_head(&self) -> Result<Option<HeadMark>> {
         Ok(self.engine.mirror_head()?.map(|head| HeadMark {
-            sequence: CommitSequence::new(head.commit_sequence().value()),
-            digest: EntryDigest::new(FixedBytes::new(*head.entry_digest().bytes())),
+            commit_sequence: CommitSequence::new(head.commit_sequence().value()),
+            entry_digest: EntryDigest::new(FixedBytes::new(*head.entry_digest().bytes())),
         }))
     }
 
@@ -204,7 +204,7 @@ impl ComponentShipper {
             Output::Appended(receipt) => receipt,
             Output::AppendRejected(rejection) => {
                 return Err(Error::MirrorAppendRejected {
-                    reason: rejection.reason,
+                    reason: rejection.append_rejection_reason,
                     head: rejection.head().cloned(),
                 });
             }
@@ -221,7 +221,7 @@ impl ComponentShipper {
             }
         };
 
-        let head = Self::mirror_head_from_mark(&receipt.head);
+        let head = Self::mirror_head_from_mark(&receipt.head_mark);
         self.engine.acknowledge_mirror(head)?;
         Ok(ShipOutcome::Shipped { head })
     }
@@ -232,13 +232,13 @@ impl ComponentShipper {
             .latest_checkpoint()?
             .ok_or(Error::CheckpointUnavailable)?;
         let artifact = CheckpointArtifact {
-            store: self.store_name.clone(),
-            sequence: CheckpointSequence::new(checkpoint.metadata().sequence().value()),
-            covered_end: CommitSequence::new(checkpoint.metadata().covered().last().value()),
-            digest: ArtifactDigest::new(FixedBytes::new(
+            store_name: self.store_name.clone(),
+            checkpoint_sequence: CheckpointSequence::new(checkpoint.metadata().sequence().value()),
+            commit_sequence: CommitSequence::new(checkpoint.metadata().covered().last().value()),
+            artifact_digest: ArtifactDigest::new(FixedBytes::new(
                 *checkpoint.metadata().checkpoint_digest().bytes(),
             )),
-            artifact: ArtifactBytes::new(Bytes::new(checkpoint.to_portable()?.into_bytes())),
+            artifact_bytes: ArtifactBytes::new(Bytes::new(checkpoint.to_portable()?.into_bytes())),
         };
         let output = self
             .client
@@ -247,7 +247,7 @@ impl ComponentShipper {
         match output {
             Output::CheckpointPublished(receipt) => Ok(receipt),
             Output::PublishRejected(rejection) => Err(Error::MirrorPublishRejected {
-                reason: rejection.reason,
+                reason: rejection.publish_rejection_reason,
             }),
             Output::MirrorFaulted(report) => Err(Error::MirrorFaulted {
                 detail: format!("{report:?}"),
@@ -261,8 +261,8 @@ impl ComponentShipper {
 
     fn mirror_head_from_mark(mark: &HeadMark) -> MirrorHead {
         MirrorHead::new(
-            sema_engine::CommitSequence::new(*mark.sequence.payload()),
-            sema_engine::EntryDigest::new(*mark.digest.payload().payload()),
+            sema_engine::CommitSequence::new(*mark.commit_sequence.payload()),
+            sema_engine::EntryDigest::new(*mark.entry_digest.payload().payload()),
         )
     }
 }
