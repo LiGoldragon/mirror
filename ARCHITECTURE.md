@@ -17,6 +17,8 @@ Key psyche decisions shaping this daemon:
 
 Retention enforcement and BLS attestation are deferred by decision in this cut; the vocabulary and placeholders are present but not enforced.
 
+Present status: mirror is built (this triad) and was briefly deployed on ouranos, then disabled on all hosts reversibly (beads `primary-h945.1`); no `mirror.service` runs on primary today. In the psyche's words, mirror "is a thing which we haven't shipped yet. It's not a place, it's just the other daemon running on another host." Reactivation is a deliberate future act under the open mirror epics, not a default any component store may assume.
+
 ## Runtime triad
 
 The daemon is schema-derived on the emitted daemon runtime. The working
