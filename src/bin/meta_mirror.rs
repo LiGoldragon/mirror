@@ -1,9 +1,9 @@
 //! `meta-mirror` — the thin CLI client for the mirror daemon's owner-only
 //! meta surface.
 //!
-//! Takes exactly one NOTA argument naming a `meta_signal_mirror::Input`
+//! Takes exactly one Dotos argument naming a meta Mirror input
 //! order, sends it to the daemon over `MIRROR_META_SOCKET`, and prints
-//! the reply as NOTA.
+//! the reply as Dotos.
 
 use mirror::client::MetaCommandLine;
 

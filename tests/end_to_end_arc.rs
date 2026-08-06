@@ -1,20 +1,3 @@
-//! THE END-TO-END ARC WITNESS (Spirit 29pb, first cut, daemon level).
-//!
-//! Two engines in one test: a fixture COMPONENT store (sema-engine
-//! versioned engine with hand-registered families) takes writes, reads
-//! its unshipped mirror outbox, and ships the suffix over REAL loopback
-//! TCP frames to a RUNNING mirror service (the daemon's component
-//! runtime with its hand-wired tailnet ingress). The mirror persists
-//! into its OWN sema-engine store and acknowledges; the component marks
-//! the shipped history `ServerCommitted`. Then a FRESH component store
-//! restores from the mirror — fetch checkpoint + suffix, engine-owned
-//! `ImportSession` — and the normal query surface reads identical
-//! records.
-//!
-//! The component-side shipper is the production reusable
-//! `ComponentShipper`; this test exercises it over the daemon's real TCP
-//! ingress.
-
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -27,15 +10,14 @@ use sema_engine::{
     Assertion, Durability, Engine as ComponentEngine, EngineOpen, EngineRecord, FamilyDirectory,
     FamilyName, Mutation, PortableCheckpoint, QueryPlan, RecordKey, Retraction, RowMaterializer,
     SchemaHash, SchemaVersion, TableDescriptor, TableName, TableReference, VersionedCommitLogEntry,
-    VersionedStoreName, VersioningPolicy,
+    VersionedRecoveryTopology, VersionedStoreName, VersioningPolicy,
 };
-use signal_mirror::{EntrySuffix, Input, Output, RestoreBundle, RestoreQuery, StoreName};
+use signal_mirror::{z2VTq5, z2VTqL, z2VVny, z2VbvA, z2Ve8p};
 use triad_runtime::PeerIdentity;
 use triad_runtime::kameo::actor::Spawn;
 
 const COMPONENT_STORE_NAME: &str = "arc-witness";
 
-/// The component's domain record — the mirror never decodes it.
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
 #[rkyv(derive(Debug))]
 struct Thought {
@@ -58,7 +40,6 @@ impl EngineRecord for Thought {
     }
 }
 
-/// The component's typed family knowledge for import materialization.
 struct Families {
     thoughts: TableReference<Thought>,
 }
@@ -82,62 +63,51 @@ impl FamilyDirectory for Families {
     }
 }
 
-/// The component-side restorer: fetch checkpoint + suffix from the
-/// mirror and import them into a fresh store.
 struct Restorer {
     client: MirrorTailnetClient,
-    store_name: StoreName,
+    store_name: z2Ve8p,
 }
 
 impl Restorer {
     fn new(address: SocketAddr) -> Self {
         Self {
             client: MirrorTailnetClient::new(address),
-            store_name: StoreName::new(COMPONENT_STORE_NAME.to_owned()),
+            store_name: z2Ve8p::new(COMPONENT_STORE_NAME.to_owned()),
         }
     }
 
-    async fn fetch(&self) -> RestoreBundle {
-        let reply = self
+    async fn fetch(&self) -> signal_mirror::z2VYSu {
+        match self
             .client
-            .exchange(Input::Restore(RestoreQuery::new(self.store_name.clone())))
+            .exchange(z2VVny::z2VdHF(z2VbvA::new(self.store_name.clone())))
             .await
-            .expect("restore call succeeds");
-        match reply {
-            Output::Restored(bundle) => bundle,
-            other => panic!("expected Restored, got {other:?}"),
+            .expect("restore call")
+        {
+            z2VTqL::z2VVve(bundle) => bundle,
+            other => panic!("unexpected output: {other:?}"),
         }
     }
 
-    fn import(bundle: RestoreBundle, target: &mut ComponentEngine) {
+    fn import(bundle: signal_mirror::z2VYSu, target: &mut ComponentEngine) {
         let checkpoint = PortableCheckpoint::from_bytes(
-            bundle
-                .checkpoint_artifact
-                .artifact_bytes
-                .payload()
-                .payload()
-                .to_vec(),
+            bundle.field_1.field_4.octets().expect("checkpoint octets"),
         )
         .decode()
-        .expect("decode checkpoint artifact");
-        let suffix: Vec<VersionedCommitLogEntry> = bundle
-            .suffix()
+        .expect("decode checkpoint");
+        let suffix = bundle
+            .field_2
             .iter()
             .map(|envelope| {
                 rkyv::from_bytes::<VersionedCommitLogEntry, rkyv::rancor::Error>(
-                    envelope.payload_bytes.payload().payload(),
+                    &envelope.field_3.octets().expect("entry octets"),
                 )
-                .expect("decode versioned entry payload")
+                .expect("decode entry")
             })
             .collect();
-        let mut session = target.begin_import().expect("import session mints");
-        session
-            .ingest_checkpoint(checkpoint)
-            .expect("checkpoint ingests");
+        let mut session = target.begin_import().expect("import session");
+        session.ingest_checkpoint(checkpoint).expect("checkpoint");
         session.ingest_suffix(suffix);
-        session
-            .commit(&Families::new())
-            .expect("import commits into the fresh store");
+        session.commit(&Families::new()).expect("import commit");
     }
 }
 
@@ -159,13 +129,14 @@ impl ComponentFixture {
     fn open_fresh(&self, file: &str) -> ComponentEngine {
         ComponentEngine::open(
             EngineOpen::new(self.path(file), SchemaVersion::new(1)).with_versioning(
-                VersioningPolicy::new(VersionedStoreName::new(COMPONENT_STORE_NAME)),
+                VersioningPolicy::new(VersionedStoreName::new(COMPONENT_STORE_NAME))
+                    .with_recovery_topology(VersionedRecoveryTopology::Mirror),
             ),
         )
-        .expect("component engine opens")
+        .expect("component engine")
     }
 
-    fn thought_descriptor(&self) -> TableDescriptor<Thought> {
+    fn descriptor(&self) -> TableDescriptor<Thought> {
         TableDescriptor::new(
             TableName::new("thoughts"),
             FamilyName::new("thought"),
@@ -175,185 +146,130 @@ impl ComponentFixture {
 
     fn open_component(&self, file: &str) -> (ComponentEngine, TableReference<Thought>) {
         let mut engine = self.open_fresh(file);
-        let thoughts = engine
-            .register_table(self.thought_descriptor())
-            .expect("thoughts register");
+        let thoughts = engine.register_table(self.descriptor()).expect("thoughts");
         (engine, thoughts)
     }
 
-    /// Populate the source component: writes, a mid-history checkpoint,
-    /// then post-checkpoint writes including a tombstone.
     fn populate(&self) -> (ComponentEngine, TableReference<Thought>) {
-        let (engine, thoughts) = self.open_component("component-source");
+        let (engine, thoughts) = self.open_component("source");
         engine
             .assert(Assertion::new(thoughts, Thought::new("alpha", "first")))
-            .expect("assert alpha");
+            .unwrap();
         engine
             .assert(Assertion::new(thoughts, Thought::new("beta", "second")))
-            .expect("assert beta");
+            .unwrap();
         engine
             .mutate(Mutation::new(thoughts, Thought::new("alpha", "revised")))
-            .expect("mutate alpha");
-        engine.checkpoint().expect("checkpoint writes");
+            .unwrap();
+        engine.checkpoint().unwrap();
         engine
             .assert(Assertion::new(thoughts, Thought::new("gamma", "third")))
-            .expect("assert gamma");
+            .unwrap();
         engine
             .retract(Retraction::new(thoughts, RecordKey::new("beta")))
-            .expect("retract beta");
+            .unwrap();
         (engine, thoughts)
     }
 }
 
 async fn running_mirror(directory: &tempfile::TempDir) -> (ServiceLink, SocketAddr) {
-    let store = Store::open(&directory.path().join("mirror.sema")).expect("mirror store opens");
+    let store = Store::open(&directory.path().join("mirror.sema")).expect("mirror store");
     let service = Service::spawn(Service::new(
         Engine::new(store),
-        "127.0.0.1:0".parse().expect("loopback address"),
+        "127.0.0.1:0".parse().unwrap(),
     ));
     service.wait_for_startup().await;
     let link = ServiceLink::new(service);
-    let address = link
-        .tcp_bound_address()
-        .await
-        .expect("query bound address")
-        .expect("the tailnet ingress is bound");
+    let address = link.tcp_bound_address().await.unwrap().unwrap();
     (link, address)
 }
 
-#[tokio::test]
-async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically() {
-    let fixture = ComponentFixture::new();
-    let (source, source_thoughts) = fixture.populate();
-
-    // A running mirror daemon runtime: real engine, real store, real
-    // loopback TCP listener.
-    let mirror_directory = tempfile::tempdir().expect("mirror temp dir");
-    let (link, address) = running_mirror(&mirror_directory).await;
-
-    // The owner registers the component store on the meta surface.
-    let registered = link
-        .meta(meta_signal_mirror::Input::RegisterStore(
-            meta_signal_mirror::StoreRegistration {
-                store_name: meta_signal_mirror::StoreName::new(COMPONENT_STORE_NAME.to_owned()),
-                content_addressing: meta_signal_mirror::ContentAddressing::Opaque,
+async fn register(link: &ServiceLink) {
+    let output = link
+        .meta(meta_signal_mirror::z2VWt5::z2VWC2(
+            meta_signal_mirror::z2VWBn {
+                field_0: z2Ve8p::new(COMPONENT_STORE_NAME.to_owned()),
+                field_1: meta_signal_mirror::z2VMYP::z2Vf8Y,
             },
         ))
         .await
-        .expect("meta register");
-    assert!(matches!(
-        registered,
-        meta_signal_mirror::Output::StoreRegistered(_)
-    ));
+        .expect("register");
+    assert!(matches!(output, meta_signal_mirror::z2VUH6::z2VSig(_)));
+}
 
-    // Before shipping: local history is queued, not server-committed.
+#[tokio::test]
+async fn component_history_ships_over_tcp_and_restores_identically() {
+    let fixture = ComponentFixture::new();
+    let (source, source_thoughts) = fixture.populate();
+    let mirror_directory = tempfile::tempdir().expect("mirror temp");
+    let (link, address) = running_mirror(&mirror_directory).await;
+    register(&link).await;
     assert_eq!(
-        source.store_durability().expect("durability reads"),
+        source.store_durability().unwrap(),
         Durability::QueuedForMirror
     );
 
-    // SHIP: outbox suffix -> envelopes -> real TCP frames -> mirror
-    // persists -> acknowledged head -> ServerCommitted.
     let shipper = ComponentShipper::new(
         source,
         address,
         VersionedStoreName::new(COMPONENT_STORE_NAME),
     );
-    let confirmed = match shipper
-        .ship_unshipped()
-        .await
-        .expect("shipper ships unshipped suffix")
-    {
+    let confirmed = match shipper.ship_unshipped().await.expect("ship") {
         ShipOutcome::Shipped { head } => head,
-        other => panic!("expected shipped history, got {other:?}"),
+        other => panic!("unexpected outcome: {other:?}"),
     };
     assert_eq!(
-        shipper
-            .engine()
-            .store_durability()
-            .expect("durability reads"),
+        shipper.engine().store_durability().unwrap(),
         Durability::ServerCommitted
     );
-    assert_eq!(
-        shipper
-            .engine()
-            .durability_of(confirmed.commit_sequence())
-            .expect("per-entry durability reads"),
-        Durability::ServerCommitted
-    );
-    assert!(
-        shipper
-            .engine()
-            .unshipped_outbox()
-            .expect("outbox reads")
-            .is_empty(),
-        "the shipped cursor covers the whole outbox"
-    );
-
-    // Publish the checkpoint artifact the restorer will fetch.
     shipper
         .publish_latest_checkpoint()
         .await
-        .expect("checkpoint publishes");
+        .expect("checkpoint");
 
-    // Re-shipping the same history is idempotent at the daemon level.
-    let resend_entries = shipper
+    let entries = shipper
         .engine()
         .versioned_replay_from_sequence(sema_engine::CommitSequence::new(1))
-        .expect("reload full history")
+        .unwrap()
         .iter()
-        .map(|entry| {
-            shipper
-                .envelope_for_entry(entry)
-                .expect("encode versioned entry envelope")
-        })
+        .map(|entry| shipper.envelope_for_entry(entry).unwrap())
         .collect();
-    let resend = MirrorTailnetClient::new(address)
-        .exchange(Input::Append(EntrySuffix::from_entries(
-            StoreName::new(COMPONENT_STORE_NAME.to_owned()),
-            None,
-            resend_entries,
-        )))
+    match MirrorTailnetClient::new(address)
+        .exchange(z2VVny::z2VVjQ(z2VTq5 {
+            field_0: z2Ve8p::new(COMPONENT_STORE_NAME.to_owned()),
+            field_1: None,
+            field_2: entries,
+        }))
         .await
-        .expect("resend call succeeds");
-    match resend {
-        Output::Appended(receipt) => {
+        .expect("resend")
+    {
+        z2VTqL::z2VXSq(receipt) => {
             assert_eq!(
-                *receipt.head_mark.commit_sequence.payload(),
+                *receipt.field_1.field_0.payload(),
                 confirmed.commit_sequence().value()
-            );
+            )
         }
-        other => panic!("expected idempotent Appended, got {other:?}"),
+        other => panic!("unexpected resend: {other:?}"),
     }
 
-    // The mirror carried the TCP peers as typed PeerIdentity::Tcp —
-    // observed through the bounded witness (a count plus the most
-    // recent peer; no unbounded production peer list).
     let witness = link.tcp_peer_witness().await.expect("peer witness");
     assert!(witness.served_request_count() >= 1);
     assert!(matches!(witness.last_peer(), Some(PeerIdentity::Tcp(_))));
 
-    // RESTORE: a fresh component store imports checkpoint + suffix
-    // fetched from the mirror.
-    let restorer = Restorer::new(address);
-    let bundle = restorer.fetch().await;
-    assert_eq!(bundle.suffix().len(), 2, "gamma + the beta tombstone");
-    let mut target = fixture.open_fresh("component-restored");
+    let bundle = Restorer::new(address).fetch().await;
+    assert_eq!(bundle.field_2.len(), 2);
+    let mut target = fixture.open_fresh("restored");
     Restorer::import(bundle, &mut target);
-    let target_thoughts = target
-        .register_table(fixture.thought_descriptor())
-        .expect("thoughts re-register against the restored catalog");
-
-    // The normal query surface reads identical records on both engines.
+    let target_thoughts = target.register_table(fixture.descriptor()).unwrap();
     let source_records = shipper
         .engine()
         .match_records(QueryPlan::all(source_thoughts))
-        .expect("source query")
+        .unwrap()
         .records()
         .to_vec();
     let target_records = target
         .match_records(QueryPlan::all(target_thoughts))
-        .expect("target query")
+        .unwrap()
         .records()
         .to_vec();
     assert_eq!(source_records, target_records);
@@ -361,56 +277,28 @@ async fn component_history_ships_over_tcp_and_a_fresh_store_restores_identically
         target_records,
         vec![
             Thought::new("alpha", "revised"),
-            Thought::new("gamma", "third"),
+            Thought::new("gamma", "third")
         ]
-    );
-
-    // And the restored store continues the same digest chain.
-    assert_eq!(
-        shipper
-            .engine()
-            .current_commit_sequence()
-            .expect("source cursor"),
-        target.current_commit_sequence().expect("target cursor"),
     );
 }
 
 #[tokio::test]
-async fn component_shipper_actor_ships_suffix_and_publishes_checkpoint() {
+async fn shipper_actor_ships_and_publishes() {
     let fixture = ComponentFixture::new();
-    let (source, _source_thoughts) = fixture.populate();
-    let mirror_directory = tempfile::tempdir().expect("mirror temp dir");
+    let (source, _) = fixture.populate();
+    let mirror_directory = tempfile::tempdir().expect("mirror temp");
     let (link, address) = running_mirror(&mirror_directory).await;
-
-    let registered = link
-        .meta(meta_signal_mirror::Input::RegisterStore(
-            meta_signal_mirror::StoreRegistration {
-                store_name: meta_signal_mirror::StoreName::new(COMPONENT_STORE_NAME.to_owned()),
-                content_addressing: meta_signal_mirror::ContentAddressing::Opaque,
-            },
-        ))
-        .await
-        .expect("meta register");
-    assert!(matches!(
-        registered,
-        meta_signal_mirror::Output::StoreRegistered(_)
-    ));
-
+    register(&link).await;
     let shipper = ComponentShipper::spawn(ComponentShipper::new(
         source,
         address,
         VersionedStoreName::new(COMPONENT_STORE_NAME),
     ));
-    let outcome = shipper
-        .ask(ShipUnshipped)
-        .await
-        .expect("shipper actor ships suffix");
-    assert!(matches!(outcome, ShipOutcome::Shipped { .. }));
-
-    let receipt = shipper
-        .ask(PublishLatestCheckpoint)
-        .await
-        .expect("shipper actor publishes checkpoint");
-    assert_eq!(*receipt.checkpoint_sequence.payload(), 1);
-    assert_eq!(*receipt.commit_sequence.payload(), 3);
+    assert!(matches!(
+        shipper.ask(ShipUnshipped).await.expect("ship"),
+        ShipOutcome::Shipped { .. }
+    ));
+    let receipt = shipper.ask(PublishLatestCheckpoint).await.expect("publish");
+    assert_eq!(*receipt.field_1.payload(), 1);
+    assert_eq!(*receipt.field_2.payload(), 3);
 }

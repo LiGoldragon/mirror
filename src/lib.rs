@@ -6,44 +6,33 @@
 //! versioned sema-engine store before acknowledging, and carries
 //! registration and retention policy behind its owner-only meta signal.
 //!
-//! The daemon is a schema-derived triad component on the emitted daemon
-//! runtime: the working tier's `Input`/`Output` come from the dependency
-//! contract `signal-mirror`, the meta tier from `meta-signal-mirror`,
-//! and the two daemon-local plane schemas (`schema/nexus.schema`,
-//! `schema/sema.schema`) generate the checked-in modules under
-//! `src/schema/`. The tailnet TCP ingress (Spirit rj9y) is hand-wired
-//! around the same service actor — see `src/service.rs`.
+//! The working and owner Interfaces come directly from their Ethos
+//! authorities. Mirror owns only its ordinary daemon mechanics and private
+//! durable ledger; no runtime schema emitter or compatibility vocabulary
+//! stands between those surfaces.
 
+#[cfg(feature = "dotos-text")]
 pub mod client;
+pub mod component_daemon;
 pub mod config;
+#[cfg(feature = "dotos-text")]
 pub mod configuration_writer;
+pub mod daemon;
 pub mod decision;
 pub mod engine;
 pub mod error;
+pub mod ledger;
 pub mod readback;
-pub mod schema_daemon;
 pub mod service;
 pub mod shipper;
 pub mod store;
 
-pub mod schema {
-    #[allow(dead_code, private_interfaces)]
-    #[rustfmt::skip]
-    pub mod nexus;
-    #[allow(dead_code, private_interfaces)]
-    #[rustfmt::skip]
-    pub mod sema;
-    #[allow(dead_code, private_interfaces)]
-    #[rustfmt::skip]
-    pub mod daemon;
-}
-
+pub use component_daemon::{ComponentDaemon, DaemonCommand, DaemonEntry, DaemonError};
 pub use config::{Configuration, ConfigurationError};
+pub use daemon::Daemon;
 pub use engine::Engine;
 pub use error::{Error, Result};
 pub use readback::LandedBody;
-pub use schema::daemon::{ComponentDaemon, DaemonCommand, DaemonEntry, DaemonError};
-pub use schema_daemon::Daemon;
 pub use service::{
     Service, ServiceLink, TailnetIngress, TcpAddressQuery, TcpPeerWitness, TcpPeerWitnessQuery,
 };

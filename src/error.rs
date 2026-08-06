@@ -10,11 +10,12 @@ pub enum Error {
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("missing NOTA request argument")]
+    #[error("missing Dotos request argument")]
     MissingArgument,
 
-    #[error("NOTA request decode: {0}")]
-    NotaDecode(#[from] nota::NotaDecodeError),
+    #[error("Dotos request decode: {0}")]
+    #[cfg(feature = "dotos-text")]
+    DotosDecode(#[from] dotos::DotosDecodeError),
 
     #[error("landed body is not a versioned commit log entry: {0}")]
     LandedBodyDecode(String),
@@ -33,6 +34,9 @@ pub enum Error {
 
     #[error("meta signal frame: {0}")]
     MetaSignalFrame(meta_signal_mirror::SignalFrameError),
+
+    #[error("Interface octet vector: {0}")]
+    Octet(#[from] signal_mirror::OctetRangeError),
 
     #[error("engine actor: {0}")]
     EngineRequest(#[from] EngineRequestError),
@@ -57,17 +61,18 @@ pub enum Error {
 
     #[error("mirror append rejected: {reason:?}")]
     MirrorAppendRejected {
-        reason: signal_mirror::AppendRejectionReason,
-        head: Option<signal_mirror::HeadMark>,
+        reason: signal_mirror::z2VcyE,
+        head: Option<signal_mirror::z2VcqM>,
     },
 
     #[error("mirror checkpoint publish rejected: {reason:?}")]
-    MirrorPublishRejected {
-        reason: signal_mirror::PublishRejectionReason,
-    },
+    MirrorPublishRejected { reason: signal_mirror::z2Vcs2 },
 
     #[error("mirror faulted: {detail}")]
     MirrorFaulted { detail: String },
+
+    #[error("Mirror carried a non-canonical digest: {digest}")]
+    MirrorDigestInvalid { digest: String },
 
     #[error("unexpected mirror output while waiting for {expected}: {actual}")]
     UnexpectedMirrorOutput {
@@ -75,11 +80,20 @@ pub enum Error {
         actual: String,
     },
 
+    #[error("unexpected Signal reply frame: {actual}")]
+    UnexpectedReplyFrame { actual: String },
+
+    #[error("unexpected Signal sub-reply: {actual}")]
+    UnexpectedSubReply { actual: String },
+
+    #[error("Signal reply rejected: {reason}")]
+    ReplyRejected { reason: String },
+
     #[error("tailnet listener: {0}")]
     TailnetListener(#[from] AsyncListenerError),
 
-    #[error("meta request read timed out")]
-    MetaRequestReadTimedOut,
+    #[error("request read timed out")]
+    RequestReadTimedOut,
 
     #[error("mirror service stopped before replying")]
     ServiceUnavailable,

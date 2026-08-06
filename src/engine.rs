@@ -1,39 +1,18 @@
-//! The mirror runtime engine — the data-bearing noun the schema-emitted
-//! planes attach to.
+//! Mirror's single-writer runtime engine.
 //!
-//! `Engine` owns the durable `Store` (the mirror's own versioned
-//! sema-engine database) and implements the generated `NexusEngine` and
-//! `SemaEngine` traits. One working request flows
-//! Signal -> Nexus decide -> SEMA check (read) -> Nexus decision
-//! (`AppendDecision` / `CheckpointDecision`, schema/nexus.schema) ->
-//! SEMA persist (write) -> Signal reply. The reply leaves only after
-//! the persisting redb transaction committed — ack after durable write.
-//!
-//! The meta tier (owner-only Unix socket) drives the same single-writer
-//! SEMA plane through the DECLARED plane verbs (`schema/sema.schema`):
-//! the registry read backs the pre-checks, and registration,
-//! retirement, and retention are SEMA writes — the schema is the one
-//! source of truth for every plane operation. Meta orders never ride
-//! the working signal.
+//! Every state-bearing request follows the same visible law: load durable
+//! ledger state, decide purely, commit, then acknowledge. The Interface meets
+//! that durable boundary directly.
 
-use meta_signal_mirror::{
-    ConfigurationReceipt, OrderRejection, OrderRejectionReason, RejectionDetail,
-};
-use signal_mirror::{FaultDetail, FaultReport, Output};
+use meta_signal_mirror::{z2VUH6, z2VWt5, z2VYSE, z2VbDA, z2Vbcq};
+use signal_mirror::{z2VMCw, z2VTqL, z2VVny, z2Vc3D};
 
 use crate::config::Configuration;
+use crate::decision::{AppendDecision, CheckpointDecision, ObjectNoticeDecision};
 use crate::error::Result;
-use crate::schema::nexus::{
-    self as nexus_schema, AppendDecision, CheckpointDecision, NexusAction, NexusEngine, NexusWork,
-    ObjectNoticeDecision,
-};
-use crate::schema::sema::{
-    self as sema_schema, LedgerFault, ReadInput, ReadOutput, SemaEngine, WriteInput, WriteOutput,
-};
+use crate::ledger::ContentAddressing;
 use crate::store::Store;
 
-/// The mirror daemon's engine: the single writer over the mirror's own
-/// versioned store.
 pub struct Engine {
     store: Store,
 }
@@ -43,8 +22,6 @@ impl Engine {
         Self { store }
     }
 
-    /// Open the durable store at the configured path and build the
-    /// engine around it.
     pub fn open(configuration: &Configuration) -> Result<Self> {
         Ok(Self::new(Store::open(configuration.storage_path())?))
     }
@@ -53,470 +30,134 @@ impl Engine {
         &self.store
     }
 
-    /// Run one decoded working `Input` end to end and return the
-    /// `Output`. The execute loop owns the
-    /// decide -> read -> decide -> write -> reply recursion.
-    pub async fn handle(&mut self, input: signal_mirror::Input) -> Output {
-        let work = NexusWork::signal_arrived(input).with_origin_route(Self::forward_origin_route());
-        let action = self.execute(work).await.into_root();
-        match action {
-            NexusAction::ReplyToSignal(output) => output.into_payload(),
-            other => Output::MirrorFaulted(FaultReport::new(FaultDetail::new(format!(
-                "nexus runner returned non-reply action: {other:?}"
-            )))),
-        }
-    }
-
-    /// One meta order against the same single-writer plane. Meta orders
-    /// are owner-only by transport (the Unix meta socket); they never
-    /// arrive over TCP.
-    pub fn handle_meta(&mut self, input: meta_signal_mirror::Input) -> meta_signal_mirror::Output {
+    pub async fn handle(&mut self, input: z2VVny) -> z2VTqL {
         match input {
-            meta_signal_mirror::Input::Configure(configure) => {
-                // Binding addresses are startup facts (the binary rkyv
-                // argument); the meta Configure echoes the active shape
-                // back as a typed receipt. Rebinding live listeners is
-                // not supported in this cut.
-                meta_signal_mirror::Output::Configured(ConfigurationReceipt::new(
-                    configure.into_payload(),
-                ))
-            }
-            meta_signal_mirror::Input::RegisterStore(registration) => {
-                self.register_store(registration)
-            }
-            meta_signal_mirror::Input::RetireStore(retirement) => {
-                self.retire_store(retirement.into_payload())
-            }
-            meta_signal_mirror::Input::SetRetention(order) => self.set_retention(order),
-            meta_signal_mirror::Input::ObserveRegistry(_) => self.observe_registry(),
+            z2VVny::z2VVjQ(request) => match self.store.check_append(request) {
+                Ok(checked) => match checked.into_decision() {
+                    AppendDecision::Accept(suffix) => self
+                        .store
+                        .persist_suffix(&suffix)
+                        .map(z2VTqL::z2VXSq)
+                        .unwrap_or_else(Self::fault),
+                    AppendDecision::Duplicate(receipt) => z2VTqL::z2VXSq(receipt),
+                    AppendDecision::Refuse(rejection) => z2VTqL::z2VX2Y(rejection),
+                },
+                Err(error) => Self::fault(error),
+            },
+            z2VVny::z2VNu6(artifact) => match self.store.check_checkpoint(artifact) {
+                Ok(checked) => match checked.into_decision() {
+                    CheckpointDecision::Accept(artifact) => self
+                        .store
+                        .persist_checkpoint(&artifact)
+                        .map(z2VTqL::z2VaSa)
+                        .unwrap_or_else(Self::fault),
+                    CheckpointDecision::Duplicate(receipt) => z2VTqL::z2VaSa(receipt),
+                    CheckpointDecision::Refuse(rejection) => z2VTqL::z2VWHb(rejection),
+                },
+                Err(error) => Self::fault(error),
+            },
+            z2VVny::z2VaYk(notice) => match self.store.check_object_notice(notice) {
+                Ok(checked) => match checked.into_decision() {
+                    ObjectNoticeDecision::Accept(receipt) => z2VTqL::z2VR8x(receipt),
+                    ObjectNoticeDecision::Refuse(rejection) => z2VTqL::z2VSxB(rejection),
+                },
+                Err(error) => Self::fault(error),
+            },
+            z2VVny::z2VdHF(query) => match self.store.load_restore(&query) {
+                Ok(Ok(bundle)) => z2VTqL::z2VVve(bundle),
+                Ok(Err(rejection)) => z2VTqL::z2VLCz(rejection),
+                Err(error) => Self::fault(error),
+            },
+            z2VVny::z2VZ8E(query) => self
+                .store
+                .load_heads(&query)
+                .map(z2VTqL::z2VMR1)
+                .unwrap_or_else(Self::fault),
         }
     }
 
-    fn register_store(
-        &mut self,
-        registration: meta_signal_mirror::StoreRegistration,
-    ) -> meta_signal_mirror::Output {
-        let working_name =
-            signal_mirror::StoreName::new(registration.store_name.as_str().to_owned());
-        if !Store::name_is_keyable(&working_name) {
+    pub fn handle_meta(&mut self, input: z2VWt5) -> z2VUH6 {
+        match input {
+            z2VWt5::z2VNSh(configuration) => z2VUH6::z2VQdi(meta_signal_mirror::z2VNz1::new(
+                configuration.into_payload(),
+            )),
+            z2VWt5::z2VWC2(registration) => self.register_store(registration),
+            z2VWt5::z2VXXR(retirement) => self.retire_store(retirement.into_payload()),
+            z2VWt5::z2Vctc(order) => self.set_retention(order),
+            z2VWt5::z2VMxr(_) => self.observe_registry(),
+        }
+    }
+
+    fn register_store(&mut self, registration: meta_signal_mirror::z2VWBn) -> z2VUH6 {
+        if !Store::name_is_keyable(&registration.field_0) {
             return Self::meta_rejection(
-                OrderRejectionReason::StoreNameInvalid,
+                z2VYSE::z2VPC3,
                 "store name carries the key separator '/'",
             );
         }
-        let listing = match self.load_registered() {
+        let listing = match self.store.load_registry() {
             Ok(listing) => listing,
-            Err(rejection) => return rejection,
+            Err(error) => return Self::meta_rejection(z2VYSE::z2VMiY, &error.to_string()),
         };
-        if Self::registry_holds(&listing, &registration.store_name) {
-            return Self::meta_rejection(
-                OrderRejectionReason::StoreAlreadyRegistered,
-                "store is already registered",
-            );
-        }
-        match self.apply_meta(WriteInput::RegisterStore(registration)) {
-            WriteOutput::StoreRegistered(receipt) => {
-                meta_signal_mirror::Output::StoreRegistered(receipt)
-            }
-            other => Self::meta_write_unexpected(other),
-        }
-    }
-
-    fn retire_store(&mut self, store: meta_signal_mirror::StoreName) -> meta_signal_mirror::Output {
-        let listing = match self.load_registered() {
-            Ok(listing) => listing,
-            Err(rejection) => return rejection,
-        };
-        if !Self::registry_holds(&listing, &store) {
-            return Self::meta_rejection(
-                OrderRejectionReason::StoreUnknown,
-                "store is not registered",
-            );
-        }
-        match self.apply_meta(WriteInput::RetireStore(
-            meta_signal_mirror::StoreRetirement::new(store),
-        )) {
-            WriteOutput::StoreRetired(receipt) => meta_signal_mirror::Output::StoreRetired(receipt),
-            other => Self::meta_write_unexpected(other),
-        }
-    }
-
-    fn set_retention(
-        &mut self,
-        order: meta_signal_mirror::RetentionOrder,
-    ) -> meta_signal_mirror::Output {
-        match self.apply_meta(WriteInput::PersistRetention(order)) {
-            WriteOutput::RetentionPersisted(receipt) => {
-                meta_signal_mirror::Output::RetentionSet(receipt)
-            }
-            other => Self::meta_write_unexpected(other),
-        }
-    }
-
-    fn observe_registry(&self) -> meta_signal_mirror::Output {
-        match self.load_registered() {
-            Ok(listing) => meta_signal_mirror::Output::RegistryObserved(listing),
-            Err(rejection) => rejection,
-        }
-    }
-
-    /// One meta write through the declared SEMA write plane.
-    fn apply_meta(&mut self, input: WriteInput) -> WriteOutput {
-        self.apply(sema_schema::sema::Sema::new(
-            Self::meta_origin_route(),
-            input,
-        ))
-        .into_root()
-    }
-
-    /// The registered-store listing through the declared SEMA read
-    /// plane; a fault projects into the typed meta rejection.
-    fn load_registered(
-        &self,
-    ) -> std::result::Result<meta_signal_mirror::RegistryListing, meta_signal_mirror::Output> {
-        let output = self
-            .observe(sema_schema::sema::Sema::new(
-                Self::meta_origin_route(),
-                ReadInput::LoadRegistry(meta_signal_mirror::RegistryQuery {}),
-            ))
-            .into_root();
-        match output {
-            ReadOutput::RegistryLoaded(listing) => Ok(listing),
-            ReadOutput::ReadFaulted(fault) => Err(Self::meta_rejection(
-                OrderRejectionReason::LedgerFault,
-                fault.payload(),
-            )),
-            other => Err(Self::meta_rejection(
-                OrderRejectionReason::LedgerFault,
-                &format!("registry read returned an unexpected output: {other:?}"),
-            )),
-        }
-    }
-
-    fn registry_holds(
-        listing: &meta_signal_mirror::RegistryListing,
-        store: &meta_signal_mirror::StoreName,
-    ) -> bool {
-        listing
+        if listing
             .payload()
             .iter()
-            .any(|registered| registered.payload() == store)
-    }
-
-    fn meta_write_unexpected(output: WriteOutput) -> meta_signal_mirror::Output {
-        match output {
-            WriteOutput::WriteFaulted(fault) => {
-                Self::meta_rejection(OrderRejectionReason::LedgerFault, fault.payload())
-            }
-            other => Self::meta_rejection(
-                OrderRejectionReason::LedgerFault,
-                &format!("meta write returned an unexpected output: {other:?}"),
-            ),
+            .any(|registered| registered.payload() == &registration.field_0)
+        {
+            return Self::meta_rejection(z2VYSE::z2VY7i, "store is already registered");
+        }
+        let store = registration.field_0;
+        let addressing = ContentAddressing::from_meta(&registration.field_1);
+        match self.store.register_store(&store, addressing) {
+            Ok(()) => z2VUH6::z2VSig(meta_signal_mirror::z2VbpU::new(store)),
+            Err(error) => Self::meta_rejection(z2VYSE::z2VMiY, &error.to_string()),
         }
     }
 
-    fn meta_rejection(reason: OrderRejectionReason, detail: &str) -> meta_signal_mirror::Output {
-        meta_signal_mirror::Output::OrderRejected(OrderRejection {
-            order_rejection_reason: reason,
-            rejection_detail: RejectionDetail::new(detail.to_owned()),
+    fn retire_store(&mut self, store: signal_mirror::z2Ve8p) -> z2VUH6 {
+        let listing = match self.store.load_registry() {
+            Ok(listing) => listing,
+            Err(error) => return Self::meta_rejection(z2VYSE::z2VMiY, &error.to_string()),
+        };
+        if !listing
+            .payload()
+            .iter()
+            .any(|registered| registered.payload() == &store)
+        {
+            return Self::meta_rejection(z2VYSE::z2VLwk, "store is not registered");
+        }
+        match self.store.retire_store(&store) {
+            Ok(()) => z2VUH6::z2VdCD(meta_signal_mirror::z2Vcin::new(store)),
+            Err(error) => Self::meta_rejection(z2VYSE::z2VMiY, &error.to_string()),
+        }
+    }
+
+    fn set_retention(&mut self, order: meta_signal_mirror::z2VXLU) -> z2VUH6 {
+        let receipt = meta_signal_mirror::z2VP3W {
+            field_0: order.field_0.clone(),
+            field_1: order.field_1.clone(),
+        };
+        match self.store.persist_retention(&order) {
+            Ok(()) => z2VUH6::z2Vedh(receipt),
+            Err(error) => Self::meta_rejection(z2VYSE::z2VMiY, &error.to_string()),
+        }
+    }
+
+    fn observe_registry(&self) -> z2VUH6 {
+        self.store
+            .load_registry()
+            .map(z2VUH6::z2VN4H)
+            .unwrap_or_else(|error| Self::meta_rejection(z2VYSE::z2VMiY, &error.to_string()))
+    }
+
+    fn meta_rejection(reason: z2VYSE, detail: &str) -> z2VUH6 {
+        z2VUH6::z2VXCa(z2Vbcq {
+            field_0: reason,
+            field_1: z2VbDA::new(detail.to_owned()),
         })
     }
 
-    /// The origin route stamped onto meta-borne SEMA traffic, distinct
-    /// from the working route so traces tell the planes apart. Meta
-    /// orders are served one per ask on the engine actor's own call
-    /// stack, so there is no concurrent in-flight mail to disambiguate.
-    fn meta_origin_route() -> sema_schema::OriginRoute {
-        sema_schema::OriginRoute::new(2)
-    }
-
-    /// The decision for an arrived working `Input`: every state-touching
-    /// operation first loads its ledger state through the SEMA read
-    /// plane.
-    fn decide_signal(&self, input: signal_mirror::Input) -> NexusAction {
-        match input {
-            signal_mirror::Input::Append(suffix) => {
-                NexusAction::command_sema_read(ReadInput::CheckAppend(suffix))
-            }
-            signal_mirror::Input::PublishCheckpoint(artifact) => {
-                NexusAction::command_sema_read(ReadInput::CheckCheckpoint(artifact))
-            }
-            signal_mirror::Input::NotifyObject(notice) => {
-                NexusAction::command_sema_read(ReadInput::CheckObjectNotice(notice))
-            }
-            signal_mirror::Input::Restore(query) => {
-                NexusAction::command_sema_read(ReadInput::LoadRestore(query))
-            }
-            signal_mirror::Input::ObserveHeads(query) => {
-                NexusAction::command_sema_read(ReadInput::LoadHeads(query))
-            }
-        }
-    }
-
-    /// The decision for a completed SEMA read: project checked state
-    /// into the schema-declared decisions, or reply directly.
-    fn decide_read_completed(&self, output: ReadOutput) -> NexusAction {
-        match output {
-            ReadOutput::AppendChecked(checked) => match checked.into_decision() {
-                AppendDecision::AcceptSuffix(novel) => {
-                    NexusAction::command_sema_write(WriteInput::PersistSuffix(novel))
-                }
-                AppendDecision::AcknowledgeDuplicate(receipt) => {
-                    NexusAction::reply_to_signal(Output::Appended(receipt))
-                }
-                AppendDecision::RefuseAppend(rejection) => {
-                    NexusAction::reply_to_signal(Output::AppendRejected(rejection))
-                }
-            },
-            ReadOutput::CheckpointChecked(checked) => match checked.into_decision() {
-                CheckpointDecision::AcceptCheckpoint(artifact) => {
-                    NexusAction::command_sema_write(WriteInput::PersistCheckpoint(artifact))
-                }
-                CheckpointDecision::AcknowledgeCheckpoint(receipt) => {
-                    NexusAction::reply_to_signal(Output::CheckpointPublished(receipt))
-                }
-                CheckpointDecision::RefuseCheckpoint(rejection) => {
-                    NexusAction::reply_to_signal(Output::PublishRejected(rejection))
-                }
-            },
-            ReadOutput::ObjectNoticeChecked(checked) => match checked.into_decision() {
-                ObjectNoticeDecision::AcceptObjectNotice(receipt) => {
-                    NexusAction::reply_to_signal(Output::ObjectNoticeAccepted(receipt))
-                }
-                ObjectNoticeDecision::RefuseObjectNotice(rejection) => {
-                    NexusAction::reply_to_signal(Output::ObjectNoticeRejected(rejection))
-                }
-            },
-            ReadOutput::RestoreLoaded(bundle) => {
-                NexusAction::reply_to_signal(Output::Restored(bundle))
-            }
-            ReadOutput::RestoreRefused(rejection) => {
-                NexusAction::reply_to_signal(Output::RestoreRejected(rejection))
-            }
-            ReadOutput::HeadsLoaded(listing) => {
-                NexusAction::reply_to_signal(Output::HeadsObserved(listing))
-            }
-            ReadOutput::RegistryLoaded(_) => NexusAction::reply_to_signal(Self::faulted(
-                "registry observation arrived on the working plane",
-            )),
-            ReadOutput::ReadFaulted(fault) => {
-                NexusAction::reply_to_signal(Self::faulted(fault.payload()))
-            }
-        }
-    }
-
-    /// The decision for a completed SEMA write: the persisted receipt is
-    /// the reply — the write transaction committed before this point.
-    fn decide_write_completed(&self, output: WriteOutput) -> NexusAction {
-        match output {
-            WriteOutput::SuffixPersisted(receipt) => {
-                NexusAction::reply_to_signal(Output::Appended(receipt))
-            }
-            WriteOutput::CheckpointPersisted(receipt) => {
-                NexusAction::reply_to_signal(Output::CheckpointPublished(receipt))
-            }
-            WriteOutput::StoreRegistered(_)
-            | WriteOutput::StoreRetired(_)
-            | WriteOutput::RetentionPersisted(_) => NexusAction::reply_to_signal(Self::faulted(
-                "meta write receipt arrived on the working plane",
-            )),
-            WriteOutput::WriteFaulted(fault) => {
-                NexusAction::reply_to_signal(Self::faulted(fault.payload()))
-            }
-        }
-    }
-
-    fn faulted(detail: &str) -> Output {
-        Output::MirrorFaulted(FaultReport::new(FaultDetail::new(detail.to_owned())))
-    }
-
-    fn budget_exhausted_reply(&self, exhausted: triad_runtime::ContinuationExhausted) -> Output {
-        Self::faulted(&format!(
-            "nexus continuation budget exhausted after {} steps (limit {})",
-            exhausted.completed_step_count(),
-            exhausted.limit().count()
-        ))
-    }
-
-    /// The single origin route the mirror stamps onto in-flight mail.
-    /// The engine actor serves one request per ask on its own call
-    /// stack, so there is no concurrent in-flight mail to disambiguate.
-    fn forward_origin_route() -> nexus_schema::OriginRoute {
-        nexus_schema::OriginRoute::new(1)
-    }
-
-    fn sema_origin_route(origin_route: nexus_schema::OriginRoute) -> sema_schema::OriginRoute {
-        sema_schema::OriginRoute::new(origin_route.payload())
-    }
-}
-
-impl NexusEngine for Engine {
-    fn decide(
-        &mut self,
-        input: nexus_schema::nexus::Nexus<nexus_schema::nexus::Work>,
-    ) -> nexus_schema::nexus::Nexus<nexus_schema::nexus::Action> {
-        let origin_route = input.origin_route();
-        let action = match input.into_root() {
-            NexusWork::SignalArrived(signal_input) => {
-                self.decide_signal(signal_input.into_payload())
-            }
-            NexusWork::SemaReadCompleted(read) => self.decide_read_completed(read.into_payload()),
-            NexusWork::SemaWriteCompleted(write) => {
-                self.decide_write_completed(write.into_payload())
-            }
-        };
-        action.with_origin_route(origin_route)
-    }
-
-    async fn execute(
-        &mut self,
-        input: nexus_schema::nexus::Nexus<nexus_schema::nexus::Work>,
-    ) -> nexus_schema::nexus::Nexus<nexus_schema::nexus::Action> {
-        let origin_route = input.origin_route();
-        let mut work = input;
-        let mut budget = triad_runtime::ContinuationLimit::default().budget();
-        loop {
-            if let Err(exhausted) = budget.spend_next_step() {
-                return NexusAction::reply_to_signal(self.budget_exhausted_reply(exhausted))
-                    .with_origin_route(origin_route);
-            }
-            self.trace_nexus_entered();
-            let action = self.decide(work).into_root();
-            self.trace_nexus_decided();
-            match action {
-                NexusAction::ReplyToSignal(_) => {
-                    return action.with_origin_route(origin_route);
-                }
-                NexusAction::CommandSemaRead(read) => {
-                    let output = self.observe(sema_schema::sema::Sema::new(
-                        Self::sema_origin_route(origin_route),
-                        read.into_payload(),
-                    ));
-                    work = NexusWork::sema_read_completed(output.into_root())
-                        .with_origin_route(origin_route);
-                }
-                NexusAction::CommandSemaWrite(write) => {
-                    let output = self.apply(sema_schema::sema::Sema::new(
-                        Self::sema_origin_route(origin_route),
-                        write.into_payload(),
-                    ));
-                    work = NexusWork::sema_write_completed(output.into_root())
-                        .with_origin_route(origin_route);
-                }
-                NexusAction::Continue(continuation) => {
-                    work = continuation.into_payload().with_origin_route(origin_route);
-                }
-            }
-        }
-    }
-}
-
-impl SemaEngine for Engine {
-    fn apply_inner(
-        &mut self,
-        input: sema_schema::sema::Sema<WriteInput>,
-    ) -> sema_schema::sema::Sema<WriteOutput> {
-        let origin_route = input.origin_route();
-        let output = match input.into_root() {
-            WriteInput::PersistSuffix(novel) => self
-                .store
-                .persist_suffix(&novel)
-                .map(WriteOutput::SuffixPersisted)
-                .unwrap_or_else(WriteOutput::from_fault),
-            WriteInput::PersistCheckpoint(artifact) => self
-                .store
-                .persist_checkpoint(&artifact)
-                .map(WriteOutput::CheckpointPersisted)
-                .unwrap_or_else(WriteOutput::from_fault),
-            WriteInput::RegisterStore(registration) => {
-                let store = registration.store_name.clone();
-                let addressing = crate::schema::sema::ContentAddressing::from_meta(
-                    &registration.content_addressing,
-                );
-                self.store
-                    .register_store(
-                        &signal_mirror::StoreName::new(store.as_str().to_owned()),
-                        addressing,
-                    )
-                    .map(|()| {
-                        WriteOutput::StoreRegistered(meta_signal_mirror::RegistrationReceipt::new(
-                            store,
-                        ))
-                    })
-                    .unwrap_or_else(WriteOutput::from_fault)
-            }
-            WriteInput::RetireStore(retirement) => {
-                let store = retirement.payload().clone();
-                self.store
-                    .retire_store(&signal_mirror::StoreName::new(store.as_str().to_owned()))
-                    .map(|()| {
-                        WriteOutput::StoreRetired(meta_signal_mirror::RetirementReceipt::new(store))
-                    })
-                    .unwrap_or_else(WriteOutput::from_fault)
-            }
-            WriteInput::PersistRetention(order) => self
-                .store
-                .persist_retention(&order)
-                .map(|()| {
-                    WriteOutput::RetentionPersisted(meta_signal_mirror::RetentionReceipt {
-                        retention_scope: order.retention_scope,
-                        retention_rule: order.retention_rule,
-                    })
-                })
-                .unwrap_or_else(WriteOutput::from_fault),
-        };
-        sema_schema::sema::Sema::new(origin_route, output)
-    }
-
-    fn observe_inner(
-        &self,
-        input: sema_schema::sema::Sema<ReadInput>,
-    ) -> sema_schema::sema::Sema<ReadOutput> {
-        let origin_route = input.origin_route();
-        let output = match input.into_root() {
-            ReadInput::CheckAppend(request) => self
-                .store
-                .check_append(request)
-                .map(ReadOutput::AppendChecked)
-                .unwrap_or_else(ReadOutput::from_fault),
-            ReadInput::CheckCheckpoint(artifact) => self
-                .store
-                .check_checkpoint(artifact)
-                .map(ReadOutput::CheckpointChecked)
-                .unwrap_or_else(ReadOutput::from_fault),
-            ReadInput::CheckObjectNotice(notice) => self
-                .store
-                .check_object_notice(notice)
-                .map(ReadOutput::ObjectNoticeChecked)
-                .unwrap_or_else(ReadOutput::from_fault),
-            ReadInput::LoadRestore(query) => match self.store.load_restore(&query) {
-                Ok(Ok(bundle)) => ReadOutput::RestoreLoaded(bundle),
-                Ok(Err(rejection)) => ReadOutput::RestoreRefused(rejection),
-                Err(error) => ReadOutput::from_fault(error),
-            },
-            ReadInput::LoadHeads(query) => self
-                .store
-                .load_heads(&query)
-                .map(ReadOutput::HeadsLoaded)
-                .unwrap_or_else(ReadOutput::from_fault),
-            ReadInput::LoadRegistry(_) => self
-                .store
-                .load_registry()
-                .map(ReadOutput::RegistryLoaded)
-                .unwrap_or_else(ReadOutput::from_fault),
-        };
-        sema_schema::sema::Sema::new(origin_route, output)
-    }
-}
-
-impl WriteOutput {
-    fn from_fault(error: crate::error::Error) -> Self {
-        Self::WriteFaulted(LedgerFault::new(error.to_string()))
-    }
-}
-
-impl ReadOutput {
-    fn from_fault(error: crate::error::Error) -> Self {
-        Self::ReadFaulted(LedgerFault::new(error.to_string()))
+    fn fault(error: impl std::fmt::Display) -> z2VTqL {
+        z2VTqL::z2VPpj(z2Vc3D::new(z2VMCw::new(error.to_string())))
     }
 }

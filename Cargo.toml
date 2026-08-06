@@ -1,6 +1,6 @@
 [package]
 name         = "mirror"
-version      = "0.2.0"
+version      = "0.3.0"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
@@ -14,12 +14,12 @@ path = "src/lib.rs"
 [[bin]]
 name = "mirror"
 path = "src/bin/mirror.rs"
-required-features = ["nota-text"]
+required-features = ["dotos-text"]
 
 [[bin]]
 name = "meta-mirror"
 path = "src/bin/meta_mirror.rs"
-required-features = ["nota-text"]
+required-features = ["dotos-text"]
 
 [[bin]]
 name = "mirror-daemon"
@@ -28,7 +28,7 @@ path = "src/bin/mirror_daemon.rs"
 [[bin]]
 name = "mirror-write-configuration"
 path = "src/bin/mirror_write_configuration.rs"
-required-features = ["nota-text"]
+required-features = ["dotos-text"]
 
 # The two-VM criome-auth witness's in-VM full-body verifier: reads the landed
 # body back over Restore and re-derives its content address. Gated behind the
@@ -39,27 +39,25 @@ path = "src/bin/mirror_landed_body_verifier.rs"
 required-features = ["witness"]
 
 [features]
-default = ["nota-text"]
-# nota-text enables the NOTA text codec on the generated runtime nouns and the
-# CLI text edges. The generated schema modules gate their NOTA surface on it.
-nota-text = ["signal-mirror/nota-text", "meta-signal-mirror/nota-text"]
-# witness builds the two-VM witness verifier bin alongside the nota-text CLIs
+default = ["dotos-text"]
+# Dotos is the human/agent text surface at the CLI edges. The daemon itself
+# receives only allocated binary Signal frames.
+dotos-text = ["dep:dotos", "signal-mirror/dotos-text", "meta-signal-mirror/dotos-text"]
+# witness builds the two-VM witness verifier bin alongside the Dotos CLIs
 # (the witness package node-b installs needs both). It adds no new dependency.
-witness = ["nota-text"]
+witness = ["dotos-text"]
 
 [dependencies]
-meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", branch = "main" }
-nota          = { package = "nota", git = "https://github.com/LiGoldragon/nota.git", branch = "main" }
+meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", rev = "c14fc141ea46652eb1bfbcd6138d08578864e6c5", default-features = false }
+dotos               = { git = "https://github.com/LiGoldragon/dotos.git", rev = "80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3", optional = true }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
-sema-engine        = { git = "https://github.com/LiGoldragon/sema-engine.git", branch = "main" }
-signal-frame       = { git = "https://github.com/LiGoldragon/signal-frame.git", branch = "main" }
-signal-mirror      = { git = "https://github.com/LiGoldragon/signal-mirror.git", branch = "main" }
+sema-engine        = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "7158e5503f37fd2fbca1d707f134e38a3fda1176" }
+signal-mirror      = { git = "https://github.com/LiGoldragon/signal-mirror.git", rev = "d57830076840f0e1ef89352823d7b0356a7c96df", default-features = false }
+signal-standard    = { git = "https://github.com/LiGoldragon/signal-standard.git", rev = "d5a4a545e61dafec30667f2af38ca503ab6d6d3f", default-features = false }
+signal-frame-interface = { package = "signal-frame", git = "https://github.com/LiGoldragon/signal-frame.git", rev = "01676293a623d97b65e320d4138c4b480c6d5dad" }
 thiserror          = "2"
 tokio              = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
-triad-runtime      = { git = "https://github.com/LiGoldragon/triad-runtime.git", branch = "main" }
-
-[build-dependencies]
-schema-rust = { package = "schema-rust", git = "https://github.com/LiGoldragon/schema-rust.git", rev = "255823ab3d0d6c5cab26e26a8b1d60c63c52c7b4" }
+triad-runtime      = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "7d10bb9d9a08ce363a0be8cff2716103f0a326fe" }
 
 [dev-dependencies]
 tempfile = "3"

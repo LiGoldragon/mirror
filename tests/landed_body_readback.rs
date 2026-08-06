@@ -1,51 +1,17 @@
-//! THE WIRE READBACK: a REAL content-addressed record body lands in the mirror,
-//! and the witness reads that exact body back OUT of the mirror over its own
-//! `signal-mirror` working contract — then re-derives the body's content address
-//! and reproduces the landed head.
-//!
-//! The fast router witness (`router/tests/criome_forward_lands_in_mirror.rs`)
-//! re-hashes the landed body through the IN-PROCESS `Store::landed_entries`. The
-//! two-VM witness has no in-process handle to the remote mirror — it has only the
-//! deployment wire. The mirror's working contract carries no read-one-body op
-//! (`ObserveHeads` returns only the head digest), and adding one would split the
-//! 0.1.1 `signal-mirror` pin across every component that links it (router and
-//! spirit both do), so this proves the readback over the EXISTING wire ops:
-//! `PublishCheckpoint` a zero-coverage checkpoint, then `Restore` — whose bundle
-//! suffix carries the FULL landed body for every entry past the checkpoint's
-//! `covered_end`. With `covered_end = 0`, that suffix is the whole chain,
-//! genesis included.
-//!
-//! The witnessed claim: the body the mirror hands back over `Restore` is the
-//! exact body that landed, and re-deriving its digest through sema-engine's own
-//! `VersionedCommitLogEntry::new` reproduces the head — so the two-VM witness can
-//! re-hash a remote mirror's landed body with no in-process access and no new
-//! wire op.
+mod support;
 
 use mirror::{Engine, LandedBody, Store};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
-use signal_mirror::{
-    ArtifactBytes, ArtifactDigest, Bytes, CheckpointArtifact, CheckpointSequence, CommitSequence,
-    EntryDigest, EntryEnvelope, EntrySuffix, FixedBytes, Input, Output, PayloadBytes, RestoreQuery,
-    StoreName,
-};
+use signal_mirror::{z2VPuU, z2VSAK, z2VTqL, z2VUwg, z2VVny};
+use signal_standard::z2VSyM;
 
-/// A source component's domain record, content-addressed by sema-engine exactly
-/// as Spirit's records are — the same fixture shape the router witness uses, so
-/// the body this test lands is the same kind the production shipper ships.
+use support::{append, artifact, register, store};
+
 #[derive(Archive, RkyvSerialize, RkyvDeserialize, Debug, Clone, PartialEq, Eq)]
 #[rkyv(derive(Debug))]
 struct WitnessRecord {
     key: String,
     body: String,
-}
-
-impl WitnessRecord {
-    fn new(key: impl Into<String>, body: impl Into<String>) -> Self {
-        Self {
-            key: key.into(),
-            body: body.into(),
-        }
-    }
 }
 
 impl sema_engine::EngineRecord for WitnessRecord {
@@ -54,12 +20,8 @@ impl sema_engine::EngineRecord for WitnessRecord {
     }
 }
 
-/// Build a REAL versioned sema-engine store's genesis entry and return the wire
-/// envelope the mirror lands for it — the rkyv `VersionedCommitLogEntry` as the
-/// body and the entry's own content address as the carried digest — plus the
-/// head digest the store reports (the value Spirit's `ObserveHead` returns).
-fn real_genesis_envelope(store_name: &str) -> (EntryEnvelope, sema_engine::EntryDigest) {
-    let directory = tempfile::tempdir().expect("source store directory");
+fn real_genesis_envelope(store_name: &str) -> (z2VPuU, sema_engine::EntryDigest) {
+    let directory = tempfile::tempdir().expect("source directory");
     let mut engine = sema_engine::Engine::open(
         sema_engine::EngineOpen::new(
             directory.path().join("source.sema"),
@@ -69,169 +31,83 @@ fn real_genesis_envelope(store_name: &str) -> (EntryEnvelope, sema_engine::Entry
             sema_engine::VersionedStoreName::new(store_name),
         )),
     )
-    .expect("source component engine opens");
-    let records: sema_engine::TableReference<WitnessRecord> = engine
-        .register_table(sema_engine::TableDescriptor::new(
+    .expect("source opens");
+    let table = engine
+        .register_table(sema_engine::TableDescriptor::<WitnessRecord>::new(
             sema_engine::TableName::new("records"),
             sema_engine::FamilyName::new("record"),
             sema_engine::SchemaHash::for_label("witness-record-v1"),
         ))
-        .expect("record family registers");
+        .expect("table");
     engine
         .assert(sema_engine::Assertion::new(
-            records,
-            WitnessRecord::new("witness-record-1", "criome auth witness record"),
-        ))
-        .expect("assert the witness record");
-
-    let log = engine
-        .versioned_commit_log()
-        .expect("read the versioned commit log");
-    let genesis = log
-        .last()
-        .expect("the asserted record produced a genesis entry");
-    let real_head = genesis.entry_digest();
-    // The body is byte-for-byte what `ComponentShipper::envelope_for_entry`
-    // ships: the same `rkyv::to_bytes::<rancor::Error>` call.
-    let body = rkyv::to_bytes::<rkyv::rancor::Error>(genesis)
-        .expect("serialize the genesis entry")
-        .to_vec();
-    let envelope = EntryEnvelope::new(
-        CommitSequence::new(1),
-        None,
-        EntryDigest::new(FixedBytes::new(*real_head.bytes())),
-        PayloadBytes::new(Bytes::new(body)),
-    );
-    (envelope, real_head)
-}
-
-struct Mirror {
-    _directory: tempfile::TempDir,
-    engine: Engine,
-}
-
-impl Mirror {
-    /// A mirror with one registered store, empty.
-    fn with_registered(store_name: &str) -> Self {
-        let directory = tempfile::tempdir().expect("mirror store directory");
-        let store = Store::open(&directory.path().join("mirror.sema")).expect("mirror store opens");
-        let mut engine = Engine::new(store);
-        let registered = engine.handle_meta(meta_signal_mirror::Input::RegisterStore(
-            meta_signal_mirror::StoreRegistration {
-                store_name: meta_signal_mirror::StoreName::new(store_name.to_owned()),
-                content_addressing: meta_signal_mirror::ContentAddressing::Opaque,
+            table,
+            WitnessRecord {
+                key: "witness-1".to_owned(),
+                body: "criome witness".to_owned(),
             },
-        ));
-        assert!(matches!(
-            registered,
-            meta_signal_mirror::Output::StoreRegistered(_)
-        ));
-        Self {
-            _directory: directory,
-            engine,
-        }
-    }
-
-    async fn handle(&mut self, input: Input) -> Output {
-        self.engine.handle(input).await
-    }
-}
-
-/// A zero-coverage checkpoint: payload-blind, `covered_end = 0`, so the
-/// subsequent `Restore` suffix is the whole chain (every entry past sequence 0).
-/// This is the witness's readback handshake — the mirror accepts any artifact for
-/// a registered store with no prior checkpoint.
-fn zero_coverage_checkpoint(store_name: &str) -> Input {
-    Input::PublishCheckpoint(CheckpointArtifact {
-        store_name: StoreName::new(store_name.to_owned()),
-        checkpoint_sequence: CheckpointSequence::new(1),
-        commit_sequence: CommitSequence::new(0),
-        artifact_digest: ArtifactDigest::new(FixedBytes::new([0xcc; 32])),
-        artifact_bytes: ArtifactBytes::new(Bytes::new(Vec::new())),
-    })
+        ))
+        .expect("assert");
+    let genesis = engine
+        .versioned_commit_log()
+        .unwrap()
+        .last()
+        .unwrap()
+        .clone();
+    let head = genesis.entry_digest();
+    let digest = head
+        .bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    let body = rkyv::to_bytes::<rkyv::rancor::Error>(&genesis).unwrap();
+    (
+        z2VPuU {
+            field_0: z2VSAK::new(1),
+            field_1: None,
+            field_2: z2VSyM::new(digest),
+            field_3: z2VUwg::from_octets(&body),
+        },
+        head,
+    )
 }
 
 #[tokio::test]
-async fn restore_hands_back_the_landed_genesis_body_which_rehashes_to_the_head() {
-    let store_name = "spirit";
-    let (envelope, real_head) = real_genesis_envelope(store_name);
-    let shipped_body = envelope.payload_bytes.as_slice().to_vec();
-    assert_ne!(
-        shipped_body,
-        b"criome-verified durable append".to_vec(),
-        "the landed body is the real versioned-log entry, not the old placeholder"
-    );
-
-    let mut mirror = Mirror::with_registered(store_name);
-
-    // Land the real genesis body.
-    let appended = mirror
-        .handle(Input::Append(EntrySuffix::from_entries(
-            StoreName::new(store_name.to_owned()),
-            None,
-            vec![envelope],
-        )))
-        .await;
-    assert!(
-        matches!(appended, Output::Appended(_)),
-        "the genesis append lands, got {appended:?}"
-    );
-
-    // The readback handshake: a zero-coverage checkpoint, then Restore.
-    let published = mirror.handle(zero_coverage_checkpoint(store_name)).await;
-    assert!(
-        matches!(published, Output::CheckpointPublished(_)),
-        "a zero-coverage checkpoint publishes, got {published:?}"
-    );
-
-    let restored = mirror
-        .handle(Input::Restore(RestoreQuery::new(StoreName::new(
-            store_name.to_owned(),
-        ))))
-        .await;
-    let bundle = match restored {
-        Output::Restored(bundle) => bundle,
-        other => panic!("expected Restored, got {other:?}"),
+async fn restore_returns_the_exact_landed_body_and_its_content_address() {
+    let (envelope, real_head) = real_genesis_envelope("spirit");
+    let shipped_body = envelope.field_3.octets().expect("octets");
+    let directory = tempfile::tempdir().expect("mirror directory");
+    let mut engine = Engine::new(Store::open(&directory.path().join("mirror.sema")).unwrap());
+    register(&mut engine, "spirit", meta_signal_mirror::z2VMYP::z2Vf8Y);
+    assert!(matches!(
+        engine.handle(append("spirit", None, vec![envelope])).await,
+        z2VTqL::z2VXSq(_)
+    ));
+    let mut zero = artifact("spirit", 1, 0);
+    zero.field_4 = signal_mirror::z2VUxk::from_octets(&[]);
+    assert!(matches!(
+        engine.handle(z2VVny::z2VNu6(zero)).await,
+        z2VTqL::z2VaSa(_)
+    ));
+    let bundle = match engine
+        .handle(z2VVny::z2VdHF(signal_mirror::z2VbvA::new(store("spirit"))))
+        .await
+    {
+        z2VTqL::z2VVve(bundle) => bundle,
+        other => panic!("unexpected output: {other:?}"),
     };
-
-    // THE READBACK: the mirror hands back the genesis body it landed, intact.
-    let suffix = bundle.suffix();
+    assert_eq!(bundle.field_2.len(), 1);
+    let landed = &bundle.field_2[0];
+    let landed_body = landed.field_3.octets().expect("octets");
+    assert_eq!(landed_body, shipped_body);
+    let rederived = LandedBody::new(&landed_body).content_address().unwrap();
+    assert_eq!(rederived, real_head);
     assert_eq!(
-        suffix.len(),
-        1,
-        "the zero-coverage restore suffix is the whole chain"
-    );
-    let landed = &suffix[0];
-    assert_eq!(
-        landed.commit_sequence,
-        CommitSequence::new(1),
-        "the restored entry is the genesis"
-    );
-    assert_eq!(
-        landed.payload_bytes.as_slice(),
-        shipped_body.as_slice(),
-        "Restore handed back the EXACT landed body — the real entry, intact"
-    );
-
-    // THE PROOF: re-derive the content address from the body read back over the
-    // wire, reproducing the head — sema-engine's own content-addressing, through
-    // the SAME `LandedBody::content_address` the two-VM witness verifier bin uses.
-    let rederived = LandedBody::new(landed.payload_bytes.as_slice())
-        .content_address()
-        .expect("the restored body is a genuine rkyv VersionedCommitLogEntry");
-    assert_eq!(
-        rederived, real_head,
-        "re-deriving the digest from the RESTORED body reproduces the record's real head"
-    );
-    assert_eq!(
-        landed.entry_digest.as_bytes(),
-        rederived.bytes(),
-        "the landed head digest is the genuine content address of the body Restore handed back"
-    );
-
-    eprintln!(
-        "RESTORE_READBACK head = {} body octets = {}",
-        rederived,
-        shipped_body.len()
+        landed.field_2.as_str(),
+        real_head
+            .bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
     );
 }

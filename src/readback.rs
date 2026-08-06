@@ -60,8 +60,14 @@ impl<'octets> LandedBody<'octets> {
     /// twin of the post-landing verifier's check
     /// (`mirror-landed-body-verifier`), re-deriving through sema-engine's
     /// own content-addressing.
-    pub fn addresses_to(&self, digest: &signal_mirror::EntryDigest) -> bool {
-        self.content_address()
-            .is_ok_and(|rederived| rederived.bytes() == digest.as_bytes())
+    pub fn addresses_to(&self, digest: &signal_standard::z2VSyM) -> bool {
+        self.content_address().is_ok_and(|rederived| {
+            let hexadecimal = rederived
+                .bytes()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>();
+            digest.as_str() == hexadecimal || digest.as_str() == format!("blake3:{hexadecimal}")
+        })
     }
 }

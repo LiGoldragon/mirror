@@ -1,8 +1,8 @@
 //! `mirror` — the thin CLI client for the mirror daemon's working surface.
 //!
-//! Takes exactly one NOTA argument naming a `signal_mirror::Input`
+//! Takes exactly one Dotos argument naming a Mirror input
 //! request, sends it to the daemon over `MIRROR_SOCKET`, and prints the
-//! reply as NOTA.
+//! reply as Dotos.
 
 use mirror::client::CommandLine;
 

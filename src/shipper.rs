@@ -1,7 +1,4 @@
-//! Component-side mirror shipper: turns a component sema-engine
-//! outbox suffix into payload-blind mirror frames, sends them to the
-//! tailnet mirror ingress, and records the server-confirmed head back
-//! into the component store.
+//! Component-side transport from a sema-engine outbox to Mirror.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -9,11 +6,13 @@ use std::sync::Arc;
 use sema_engine::{
     Engine as ComponentEngine, MirrorHead, VersionedCommitLogEntry, VersionedStoreName,
 };
-use signal_mirror::{
-    ArtifactBytes, ArtifactDigest, Bytes, CheckpointArtifact, CheckpointReceipt,
-    CheckpointSequence, CommitSequence, EntryDigest, EntryEnvelope, EntrySuffix, FixedBytes,
-    HeadMark, Input, Output, PayloadBytes, StoreName,
+use signal_frame_interface::{
+    ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, SessionEpoch, SubReply,
 };
+use signal_mirror::{
+    z2VLxP, z2VPuU, z2VSAK, z2VTXE, z2VTq5, z2VTqL, z2VUKn, z2VUwg, z2VUxk, z2VVny, z2VcqM, z2Ve8p,
+};
+use signal_standard::z2VSyM;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use triad_runtime::kameo::actor::{Actor, ActorRef};
@@ -22,9 +21,6 @@ use triad_runtime::{FrameBody, LengthPrefixedCodec};
 
 use crate::error::{Error, Result};
 
-/// Tailnet working-signal client for the mirror daemon. The mirror's
-/// meta surface is intentionally absent: component shippers only append
-/// working history and publish checkpoint artifacts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MirrorTailnetClient {
     address: SocketAddr,
@@ -39,50 +35,54 @@ impl MirrorTailnetClient {
         self.address
     }
 
-    pub async fn exchange(&self, input: Input) -> Result<Output> {
+    pub async fn exchange(&self, input: z2VVny) -> Result<z2VTqL> {
         let codec = LengthPrefixedCodec::default();
         let mut stream = TcpStream::connect(self.address).await?;
+        let exchange = ExchangeIdentifier::new(
+            SessionEpoch::new(0),
+            ExchangeLane::Connector,
+            LaneSequence::first(),
+        );
         codec
-            .write_body_async(&mut stream, &FrameBody::new(input.encode_signal_frame()?))
+            .write_body_async(
+                &mut stream,
+                &FrameBody::new(input.encode_request_frame(exchange)?),
+            )
             .await?;
         stream.flush().await?;
         let reply = codec.read_body_async(&mut stream).await?;
-        let (_route, output) = Output::decode_signal_frame(&reply.into_bytes())?;
-        Ok(output)
+        match signal_mirror::ContractMarker::decode_frame(&reply.into_bytes())?.into_body() {
+            signal_mirror::FrameBody::Reply { reply, .. } => match reply {
+                Reply::Accepted { per_operation, .. } => match per_operation.into_head() {
+                    SubReply::Ok(output) => Ok(output),
+                    other => Err(Error::UnexpectedSubReply {
+                        actual: format!("{other:?}"),
+                    }),
+                },
+                Reply::Rejected { reason } => Err(Error::ReplyRejected {
+                    reason: reason.to_string(),
+                }),
+            },
+            other => Err(Error::UnexpectedReplyFrame {
+                actual: format!("{other:?}"),
+            }),
+        }
     }
 }
 
-/// Result of one ship attempt over the component's durable outbox.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShipOutcome {
     AlreadyCommitted { head: Option<MirrorHead> },
     Shipped { head: MirrorHead },
 }
 
-/// The reusable production shipper. It can be used directly by a
-/// component's existing engine-owning actor, or spawned as a Kameo
-/// actor when the shipper owns the component engine itself.
-///
-/// The component engine is held behind an [`Arc`] so the shipper can
-/// either own its engine outright (via [`ComponentShipper::new`] /
-/// [`ComponentShipper::with_client`], which wrap the engine in a fresh
-/// `Arc`) or SHARE a component's already-`Arc`-held engine (via
-/// [`ComponentShipper::from_shared_engine`] /
-/// [`ComponentShipper::with_shared_client`]). Sharing matters because
-/// `sema_engine::Engine` is intentionally not `Clone`: a component such
-/// as spirit keeps its engine behind one `Arc<Engine>` and writes
-/// through it, and the shipper must read the SAME engine's outbox and
-/// record `acknowledge_mirror` back into it. Both shipper and component
-/// then hold clones of one `Arc`, so they see one engine.
 pub struct ComponentShipper {
     engine: Arc<ComponentEngine>,
     client: MirrorTailnetClient,
-    store_name: StoreName,
+    store_name: z2Ve8p,
 }
 
 impl ComponentShipper {
-    /// Construct a shipper that OWNS its component engine, opened over a
-    /// mirror address. The engine is wrapped in a fresh `Arc`.
     pub fn new(
         engine: ComponentEngine,
         mirror_address: SocketAddr,
@@ -91,8 +91,6 @@ impl ComponentShipper {
         Self::with_client(engine, MirrorTailnetClient::new(mirror_address), store_name)
     }
 
-    /// Construct an engine-owning shipper over an explicit client. The
-    /// engine is wrapped in a fresh `Arc`.
     pub fn with_client(
         engine: ComponentEngine,
         client: MirrorTailnetClient,
@@ -101,11 +99,6 @@ impl ComponentShipper {
         Self::with_shared_client(Arc::new(engine), client, store_name)
     }
 
-    /// Construct a shipper that SHARES a component's already-`Arc`-held
-    /// engine, opened over a mirror address. The shipper holds a clone
-    /// of the same `Arc`, so writes the component appends become the
-    /// outbox this shipper ships, and `acknowledge_mirror` flows back
-    /// into the component's engine.
     pub fn from_shared_engine(
         engine: Arc<ComponentEngine>,
         mirror_address: SocketAddr,
@@ -114,7 +107,6 @@ impl ComponentShipper {
         Self::with_shared_client(engine, MirrorTailnetClient::new(mirror_address), store_name)
     }
 
-    /// Construct an engine-SHARING shipper over an explicit client.
     pub fn with_shared_client(
         engine: Arc<ComponentEngine>,
         client: MirrorTailnetClient,
@@ -123,18 +115,14 @@ impl ComponentShipper {
         Self {
             engine,
             client,
-            store_name: StoreName::new(store_name.as_str().to_owned()),
+            store_name: z2Ve8p::new(store_name.as_str().to_owned()),
         }
     }
 
-    /// Borrow the component engine the shipper reads from and
-    /// acknowledges back into.
     pub fn engine(&self) -> &ComponentEngine {
         &self.engine
     }
 
-    /// The shared `Arc` over the component engine, for callers that want
-    /// to hand the same engine to another holder.
     pub fn shared_engine(&self) -> Arc<ComponentEngine> {
         Arc::clone(&self.engine)
     }
@@ -143,32 +131,31 @@ impl ComponentShipper {
         self.client
     }
 
-    pub fn store_name(&self) -> &StoreName {
+    pub fn store_name(&self) -> &z2Ve8p {
         &self.store_name
     }
 
-    pub fn envelope_for_entry(&self, entry: &VersionedCommitLogEntry) -> Result<EntryEnvelope> {
-        Ok(EntryEnvelope::new(
-            CommitSequence::new(entry.commit_sequence().value()),
-            entry
+    pub fn envelope_for_entry(&self, entry: &VersionedCommitLogEntry) -> Result<z2VPuU> {
+        let payload = rkyv::to_bytes::<rkyv::rancor::Error>(entry).map_err(|source| {
+            Error::PayloadEncode {
+                surface: "versioned entry",
+                message: source.to_string(),
+            }
+        })?;
+        Ok(z2VPuU {
+            field_0: z2VSAK::new(entry.commit_sequence().value()),
+            field_1: entry
                 .previous_entry_digest()
-                .map(|digest| EntryDigest::new(FixedBytes::new(*digest.bytes()))),
-            EntryDigest::new(FixedBytes::new(*entry.entry_digest().bytes())),
-            PayloadBytes::new(Bytes::new(
-                rkyv::to_bytes::<rkyv::rancor::Error>(entry)
-                    .map_err(|source| Error::PayloadEncode {
-                        surface: "versioned entry",
-                        message: source.to_string(),
-                    })?
-                    .to_vec(),
-            )),
-        ))
+                .map(|digest| z2VSyM::new(digest_text(digest.bytes()))),
+            field_2: z2VSyM::new(digest_text(entry.entry_digest().bytes())),
+            field_3: z2VUwg::from_octets(&payload),
+        })
     }
 
-    pub fn expected_head(&self) -> Result<Option<HeadMark>> {
-        Ok(self.engine.mirror_head()?.map(|head| HeadMark {
-            commit_sequence: CommitSequence::new(head.commit_sequence().value()),
-            entry_digest: EntryDigest::new(FixedBytes::new(*head.entry_digest().bytes())),
+    pub fn expected_head(&self) -> Result<Option<z2VcqM>> {
+        Ok(self.engine.mirror_head()?.map(|head| z2VcqM {
+            field_0: z2VSAK::new(head.commit_sequence().value()),
+            field_1: z2VSyM::new(digest_text(head.entry_digest().bytes())),
         }))
     }
 
@@ -179,12 +166,12 @@ impl ComponentShipper {
                 head: self.engine.mirror_head()?,
             });
         };
-        let entries: Vec<EntryEnvelope> = self
+        let entries = self
             .engine
             .versioned_replay_from_sequence(first)?
             .iter()
             .map(|entry| self.envelope_for_entry(entry))
-            .collect::<Result<_>>()?;
+            .collect::<Result<Vec<_>>>()?;
         if entries.len() != outbox.len() {
             return Err(Error::OutboxSuffixMismatch {
                 outbox_rows: outbox.len(),
@@ -194,23 +181,23 @@ impl ComponentShipper {
 
         let output = self
             .client
-            .exchange(Input::Append(EntrySuffix::from_entries(
-                self.store_name.clone(),
-                self.expected_head()?,
-                entries,
-            )))
+            .exchange(z2VVny::z2VVjQ(z2VTq5 {
+                field_0: self.store_name.clone(),
+                field_1: self.expected_head()?,
+                field_2: entries,
+            }))
             .await?;
         let receipt = match output {
-            Output::Appended(receipt) => receipt,
-            Output::AppendRejected(rejection) => {
+            z2VTqL::z2VXSq(receipt) => receipt,
+            z2VTqL::z2VX2Y(rejection) => {
                 return Err(Error::MirrorAppendRejected {
-                    reason: rejection.append_rejection_reason,
-                    head: rejection.head().cloned(),
+                    reason: rejection.field_1,
+                    head: rejection.field_2,
                 });
             }
-            Output::MirrorFaulted(report) => {
+            z2VTqL::z2VPpj(report) => {
                 return Err(Error::MirrorFaulted {
-                    detail: format!("{report:?}"),
+                    detail: report.payload().payload().clone(),
                 });
             }
             other => {
@@ -221,36 +208,32 @@ impl ComponentShipper {
             }
         };
 
-        let head = Self::mirror_head_from_mark(&receipt.head_mark);
+        let head = Self::mirror_head_from_mark(&receipt.field_1)?;
         self.engine.acknowledge_mirror(head)?;
         Ok(ShipOutcome::Shipped { head })
     }
 
-    pub async fn publish_latest_checkpoint(&self) -> Result<CheckpointReceipt> {
+    pub async fn publish_latest_checkpoint(&self) -> Result<z2VLxP> {
         let checkpoint = self
             .engine
             .latest_checkpoint()?
             .ok_or(Error::CheckpointUnavailable)?;
-        let artifact = CheckpointArtifact {
-            store_name: self.store_name.clone(),
-            checkpoint_sequence: CheckpointSequence::new(checkpoint.metadata().sequence().value()),
-            commit_sequence: CommitSequence::new(checkpoint.metadata().covered().last().value()),
-            artifact_digest: ArtifactDigest::new(FixedBytes::new(
-                *checkpoint.metadata().checkpoint_digest().bytes(),
+        let artifact = z2VTXE {
+            field_0: self.store_name.clone(),
+            field_1: z2VUKn::new(checkpoint.metadata().sequence().value()),
+            field_2: z2VSAK::new(checkpoint.metadata().covered().last().value()),
+            field_3: z2VSyM::new(digest_text(
+                checkpoint.metadata().checkpoint_digest().bytes(),
             )),
-            artifact_bytes: ArtifactBytes::new(Bytes::new(checkpoint.to_portable()?.into_bytes())),
+            field_4: z2VUxk::from_octets(&checkpoint.to_portable()?.into_bytes()),
         };
-        let output = self
-            .client
-            .exchange(Input::PublishCheckpoint(artifact))
-            .await?;
-        match output {
-            Output::CheckpointPublished(receipt) => Ok(receipt),
-            Output::PublishRejected(rejection) => Err(Error::MirrorPublishRejected {
-                reason: rejection.publish_rejection_reason,
+        match self.client.exchange(z2VVny::z2VNu6(artifact)).await? {
+            z2VTqL::z2VaSa(receipt) => Ok(receipt),
+            z2VTqL::z2VWHb(rejection) => Err(Error::MirrorPublishRejected {
+                reason: rejection.field_1,
             }),
-            Output::MirrorFaulted(report) => Err(Error::MirrorFaulted {
-                detail: format!("{report:?}"),
+            z2VTqL::z2VPpj(report) => Err(Error::MirrorFaulted {
+                detail: report.payload().payload().clone(),
             }),
             other => Err(Error::UnexpectedMirrorOutput {
                 expected: "CheckpointPublished",
@@ -259,12 +242,34 @@ impl ComponentShipper {
         }
     }
 
-    fn mirror_head_from_mark(mark: &HeadMark) -> MirrorHead {
-        MirrorHead::new(
-            sema_engine::CommitSequence::new(*mark.commit_sequence.payload()),
-            sema_engine::EntryDigest::new(*mark.entry_digest.payload().payload()),
-        )
+    fn mirror_head_from_mark(mark: &z2VcqM) -> Result<MirrorHead> {
+        Ok(MirrorHead::new(
+            sema_engine::CommitSequence::new(*mark.field_0.payload()),
+            sema_engine::EntryDigest::new(parse_digest(mark.field_1.as_str())?),
+        ))
     }
+}
+
+fn digest_text(bytes: &[u8; 32]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn parse_digest(text: &str) -> Result<[u8; 32]> {
+    let hexadecimal = text.strip_prefix("blake3:").unwrap_or(text);
+    if hexadecimal.len() != 64 {
+        return Err(Error::MirrorDigestInvalid {
+            digest: text.to_owned(),
+        });
+    }
+    let mut bytes = [0_u8; 32];
+    for (offset, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hexadecimal[offset * 2..offset * 2 + 2], 16).map_err(|_| {
+            Error::MirrorDigestInvalid {
+                digest: text.to_owned(),
+            }
+        })?;
+    }
+    Ok(bytes)
 }
 
 impl Actor for ComponentShipper {
@@ -276,7 +281,6 @@ impl Actor for ComponentShipper {
     }
 }
 
-/// Ask a spawned [`ComponentShipper`] to ship its current outbox suffix.
 pub struct ShipUnshipped;
 
 impl Message<ShipUnshipped> for ComponentShipper {
@@ -291,11 +295,10 @@ impl Message<ShipUnshipped> for ComponentShipper {
     }
 }
 
-/// Ask a spawned [`ComponentShipper`] to publish its latest checkpoint.
 pub struct PublishLatestCheckpoint;
 
 impl Message<PublishLatestCheckpoint> for ComponentShipper {
-    type Reply = Result<CheckpointReceipt>;
+    type Reply = Result<z2VLxP>;
 
     async fn handle(
         &mut self,

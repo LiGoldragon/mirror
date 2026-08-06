@@ -2,9 +2,9 @@
 //! share.
 //!
 //! `Service` is the kameo actor that owns `Engine` (and so
-//! the single-writer durable store). The generated Unix daemon's
-//! `EngineActor` holds a `ServiceLink` and forwards working and meta
-//! requests into this mailbox; the hand-wired tailnet TCP ingress
+//! the single-writer durable store). The Unix daemon runtime holds a
+//! `ServiceLink` and forwards working and meta requests into this mailbox;
+//! the tailnet TCP ingress
 //! (`TailnetIngress`, spawned by this actor's own `on_start`) forwards
 //! the same typed working requests into the same mailbox. Every request
 //! from every transport serialises through one actor — the single
@@ -18,6 +18,8 @@
 
 use std::net::SocketAddr;
 
+use meta_signal_mirror::{z2VUH6 as MetaOutput, z2VWt5 as MetaInput};
+use signal_mirror::{z2VTqL as WorkingOutput, z2VVny as WorkingInput};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use triad_runtime::kameo::Actor;
@@ -104,11 +106,9 @@ impl Actor for Service {
     type Args = Self;
     type Error = Error;
 
-    /// Bind the hand-wired tailnet TCP ingress around this actor's own
-    /// reference and serve it from a background task. The Unix tiers are
-    /// bound by the generated daemon shell; the TCP tier is the first
-    /// hand-wired consumer of `triad_runtime::TcpListenerDaemon`
-    /// (schema-rust does not emit TCP daemons yet).
+    /// Bind the tailnet TCP ingress around this actor's own reference and
+    /// serve it from a background task. The ordinary daemon runtime binds the
+    /// Unix tiers; both paths converge on this actor.
     async fn on_start(mut actor: Self::Args, actor_reference: ActorRef<Self>) -> Result<Self> {
         let ingress = TailnetIngress::new(actor_reference);
         let listener = TcpListenerDaemon::new(
@@ -145,18 +145,18 @@ impl Actor for Service {
 /// treats both kernel-vouched Unix peers and tailnet TCP peers as
 /// working traffic (Spirit rj9y — no per-request auth; criome deferred).
 pub struct WorkingSignal {
-    input: signal_mirror::Input,
+    input: WorkingInput,
     context: ConnectionContext,
 }
 
 impl WorkingSignal {
-    pub fn new(input: signal_mirror::Input, context: ConnectionContext) -> Self {
+    pub fn new(input: WorkingInput, context: ConnectionContext) -> Self {
         Self { input, context }
     }
 }
 
 impl Message<WorkingSignal> for Service {
-    type Reply = Result<signal_mirror::Output>;
+    type Reply = Result<WorkingOutput>;
 
     async fn handle(
         &mut self,
@@ -170,20 +170,20 @@ impl Message<WorkingSignal> for Service {
     }
 }
 
-/// One decoded meta order. Only the generated Unix daemon's meta tier
+/// One decoded meta order. Only the Unix daemon's meta tier
 /// constructs this message — the TCP ingress cannot, structurally.
 pub struct MetaOrder {
-    input: meta_signal_mirror::Input,
+    input: MetaInput,
 }
 
 impl MetaOrder {
-    pub fn new(input: meta_signal_mirror::Input) -> Self {
+    pub fn new(input: MetaInput) -> Self {
         Self { input }
     }
 }
 
 impl Message<MetaOrder> for Service {
-    type Reply = Result<meta_signal_mirror::Output>;
+    type Reply = Result<MetaOutput>;
 
     async fn handle(
         &mut self,
@@ -227,7 +227,7 @@ impl Message<TcpPeerWitnessQuery> for Service {
 }
 
 /// The cloneable handle both transports hold on the one mirror service.
-/// The generated daemon's `ComponentDaemon::Engine` is this link; the
+/// The daemon's `ComponentDaemon::Engine` is this link; the
 /// TCP ingress holds the same `ActorRef`.
 #[derive(Clone)]
 pub struct ServiceLink {
@@ -248,19 +248,16 @@ impl ServiceLink {
 
     pub async fn working(
         &self,
-        input: signal_mirror::Input,
+        input: WorkingInput,
         context: ConnectionContext,
-    ) -> Result<signal_mirror::Output> {
+    ) -> Result<WorkingOutput> {
         self.service
             .ask(WorkingSignal::new(input, context))
             .await
             .map_err(Self::fallible)
     }
 
-    pub async fn meta(
-        &self,
-        input: meta_signal_mirror::Input,
-    ) -> Result<meta_signal_mirror::Output> {
+    pub async fn meta(&self, input: MetaInput) -> Result<MetaOutput> {
         self.service
             .ask(MetaOrder::new(input))
             .await
@@ -282,10 +279,10 @@ impl ServiceLink {
     }
 }
 
-/// The hand-wired tailnet TCP ingress: the same length-prefixed frame
-/// codec and the same signal-frame working contract as the generated
-/// Unix working tier, forwarding into the same service mailbox. One
-/// request frame per connection, mirroring the generated working
+/// The tailnet TCP ingress: the same length-prefixed frame codec and the same
+/// signal-frame working contract as the Unix working tier, forwarding into
+/// the same service mailbox. One request frame per connection, mirroring the
+/// working
 /// transport's request shape.
 pub struct TailnetIngress {
     service: ActorRef<Service>,
@@ -306,7 +303,8 @@ impl AsyncConnectionRuntime<TcpStream> for TailnetIngress {
 
     async fn handle_connection(&self, mut connection: AcceptedConnection<TcpStream>) -> Result<()> {
         let body = self.codec.read_body_async(connection.stream_mut()).await?;
-        let (_route, input) = signal_mirror::Input::decode_signal_frame(&body.into_bytes())?;
+        let (exchange, input) =
+            signal_mirror::ContractMarker::decode_single_request(&body.into_bytes())?;
         let context = *connection.context();
         let output = ServiceLink::new(self.service.clone())
             .working(input, context)
@@ -314,7 +312,7 @@ impl AsyncConnectionRuntime<TcpStream> for TailnetIngress {
         self.codec
             .write_body_async(
                 connection.stream_mut(),
-                &FrameBody::new(output.encode_signal_frame()?),
+                &FrameBody::new(output.encode_reply_frame(exchange)?),
             )
             .await?;
         connection.stream_mut().flush().await?;

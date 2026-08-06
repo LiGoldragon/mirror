@@ -37,13 +37,9 @@
             "rust-src"
           ];
           craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
-          schemaFilter =
-            path: type:
-            (type == "regular" || type == "directory") && (builtins.match ".*/schema(/.*)?" path != null);
-          sourceFilter = path: type: (craneLib.filterCargoSources path type) || (schemaFilter path type);
           src = pkgs.lib.cleanSourceWith {
             src = ./.;
-            filter = sourceFilter;
+            filter = craneLib.filterCargoSources;
             name = "source";
           };
           commonArgs = {
@@ -78,9 +74,9 @@
               meta.mainProgram = "mirror-daemon";
             }
           );
-          # The two-VM criome-auth witness build: the daemon + nota-text CLIs
+          # The two-VM criome-auth witness build: the daemon + Dotos CLIs
           # PLUS the mirror-landed-body-verifier (the `witness` feature also
-          # enables nota-text). node-b installs this so it can re-hash the
+          # enables dotos-text). node-b installs this so it can re-hash the
           # landed body in the VM. Consumed by CriomOS-test-cluster.
           witness = context.craneLib.buildPackage (
             context.commonArgs
@@ -118,11 +114,11 @@
               inherit (context) cargoArtifacts;
             }
           );
-          test-nota-text = context.craneLib.cargoTest (
+          test-dotos-text = context.craneLib.cargoTest (
             context.commonArgs
             // {
               inherit (context) cargoArtifacts;
-              cargoTestExtraArgs = "--features nota-text --all-targets";
+              cargoTestExtraArgs = "--features dotos-text --all-targets";
             }
           );
           # A REAL landed body is read back OUT of the mirror over the existing
@@ -133,7 +129,7 @@
             context.commonArgs
             // {
               inherit (context) cargoArtifacts;
-              cargoTestExtraArgs = "--test landed_body_readback restore_hands_back_the_landed_genesis_body_which_rehashes_to_the_head -- --exact";
+              cargoTestExtraArgs = "--test landed_body_readback restore_returns_the_exact_landed_body_and_its_content_address -- --exact";
             }
           );
           # A SemaVersionedLog store recomputes each body's content address at
@@ -145,7 +141,7 @@
             context.commonArgs
             // {
               inherit (context) cargoArtifacts;
-              cargoTestExtraArgs = "--test append_addressing_refusal refuses_mismatched_body_and_lands_matching_body -- --exact";
+              cargoTestExtraArgs = "--test append_addressing_refusal addressing_policy_refuses_tampering_without_weakening_opaque_stores -- --exact";
             }
           );
           # The in-VM witness verifier bin compiles under `--features witness`

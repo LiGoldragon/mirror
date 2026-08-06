@@ -8,7 +8,7 @@
 //! content-addressing (`mirror::LandedBody::content_address`), and asserts the
 //! re-derived 32 digest BYTES equal the real spirit head the witness forwarded.
 //!
-//! It decodes the binary `Output::Restored` wire reply directly — no NOTA
+//! It decodes the binary restored wire reply directly — no textual
 //! byte-list parsing in shell — and exits nonzero on any mismatch, so the
 //! testScript proves the full-body landing by the bin's exit code, not by a
 //! shell string compare against a Debug render.
@@ -22,7 +22,7 @@ use std::process::ExitCode;
 
 use mirror::LandedBody;
 use mirror::client::DaemonSocket;
-use signal_mirror::{Input, Output, RestoreQuery, StoreName};
+use signal_mirror::{z2VTqL, z2VVny, z2VbvA, z2Ve8p};
 use thiserror::Error;
 
 /// The witness verifier resolved from its environment: where to read the landed
@@ -30,7 +30,7 @@ use thiserror::Error;
 /// to.
 struct LandedBodyVerifier {
     socket: DaemonSocket,
-    store: StoreName,
+    store: z2Ve8p,
     store_label: String,
     expected: [u8; 32],
 }
@@ -79,7 +79,7 @@ impl LandedBodyVerifier {
         let expected = Self::parse_expected_digest(&expected_hex)?;
         Ok(Self {
             socket,
-            store: StoreName::new(store_label.clone()),
+            store: z2Ve8p::new(store_label.clone()),
             store_label,
             expected,
         })
@@ -113,15 +113,15 @@ impl LandedBodyVerifier {
     fn verify(&self) -> Result<Verdict, VerifyError> {
         let reply = self
             .socket
-            .request(Input::Restore(RestoreQuery::new(self.store.clone())))?;
+            .request(z2VVny::z2VdHF(z2VbvA::new(self.store.clone())))?;
         let bundle = match reply {
-            Output::Restored(bundle) => bundle,
+            z2VTqL::z2VVve(bundle) => bundle,
             other => return Err(VerifyError::UnexpectedReply(format!("{other:?}"))),
         };
-        let landed = bundle.suffix().first().ok_or(VerifyError::EmptySuffix)?;
-        let body = landed.payload_bytes.as_slice();
+        let landed = bundle.field_2.first().ok_or(VerifyError::EmptySuffix)?;
+        let body = landed.field_3.octets().map_err(mirror::Error::from)?;
 
-        let rederived = LandedBody::new(body).content_address()?;
+        let rederived = LandedBody::new(&body).content_address()?;
         let expected_hex = Self::hex(&self.expected);
         if rederived.bytes() != &self.expected {
             return Err(VerifyError::DigestMismatch {
@@ -130,10 +130,10 @@ impl LandedBodyVerifier {
             });
         }
 
-        let carried = landed.entry_digest.as_bytes();
-        if carried != &self.expected {
+        let carried = landed.field_2.as_str();
+        if carried != expected_hex && carried != format!("blake3:{expected_hex}") {
             return Err(VerifyError::CarriedMismatch {
-                carried: Self::hex(carried),
+                carried: carried.to_owned(),
                 expected: expected_hex,
             });
         }
@@ -142,7 +142,7 @@ impl LandedBodyVerifier {
             store_label: self.store_label.clone(),
             octets: body.len(),
             rederived,
-            carried_hex: Self::hex(carried),
+            carried_hex: carried.to_owned(),
             expected_hex,
         })
     }
