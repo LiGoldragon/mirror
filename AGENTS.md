@@ -21,3 +21,9 @@ Load-bearing rules for this repo:
   language, build-time emitter, readable wire alias module, or compatibility
   copy of an Interface.
 - Retention is a stored placeholder, not enforced (deferred by decision).
+
+## Protos estate status
+
+Stack: correct-new destination
+Status: active component, current checkout legacy-wired
+This checkout is not proof of correct-new adoption.
