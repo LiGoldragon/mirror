@@ -1,5 +1,13 @@
 # mirror — architecture
 
+## Status: deprecated
+
+The living marked Mirror deprecated on 2026-09-10. Retain this repository as
+historical evidence, not an active development or stack migration target.
+Do not add new consumers or resume the unfinished migration without new
+explicit direction. The documentation below describes historical behavior
+and does not establish active status.
+
 Mirror is the payload-blind version-control remote of the Mirror triad. One
 daemon serves many component stores. It validates append history, keeps the
 received bytes opaque, commits them durably, and acknowledges only after the

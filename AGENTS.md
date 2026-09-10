@@ -1,5 +1,13 @@
 # mirror agent notes
 
+## Status: deprecated
+
+The living marked Mirror deprecated on 2026-09-10. Retain this repository as
+historical evidence, not an active development or stack migration target.
+Do not add new consumers or resume the unfinished migration without new
+explicit direction. The documentation below describes historical behavior
+and does not establish active status.
+
 Read this repo's `ARCHITECTURE.md` before editing.
 
 `mirror` is the daemon of the mirror triad — the payload-blind sema
@@ -24,6 +32,6 @@ Load-bearing rules for this repo:
 
 ## Protos estate status
 
-Stack: correct-new destination
-Status: active component, current checkout legacy-wired
-This checkout is not proof of correct-new adoption.
+Stack: deprecated legacy evidence
+Status: deprecated by the living on 2026-09-10
+This repository is not a destination for new-stack adoption.
