@@ -19,7 +19,7 @@
 use std::net::SocketAddr;
 
 use meta_signal_mirror::{z2VUH6 as MetaOutput, z2VWt5 as MetaInput};
-use signal_mirror::{z2VTqL as WorkingOutput, z2VVny as WorkingInput};
+use signal_mirror::{ByteViewable, Restorable, Signal, Signalizable};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use triad_runtime::kameo::Actor;
@@ -303,8 +303,9 @@ impl AsyncConnectionRuntime<TcpStream> for TailnetIngress {
 
     async fn handle_connection(&self, mut connection: AcceptedConnection<TcpStream>) -> Result<()> {
         let body = self.codec.read_body_async(connection.stream_mut()).await?;
-        let (exchange, input) =
-            signal_mirror::ContractMarker::decode_single_request(&body.into_bytes())?;
+        let input = signal_mirror::Signal::<signal_mirror::Query>::from(body.into_bytes())
+            .restore()
+            .map_err(|error| Error::Archive(error.to_string()))?;
         let context = *connection.context();
         let output = ServiceLink::new(self.service.clone())
             .working(input, context)
@@ -312,7 +313,13 @@ impl AsyncConnectionRuntime<TcpStream> for TailnetIngress {
         self.codec
             .write_body_async(
                 connection.stream_mut(),
-                &FrameBody::new(output.encode_reply_frame(exchange)?),
+                &FrameBody::new(
+                    output
+                        .signalize()
+                        .map_err(|error| Error::Archive(error.to_string()))?
+                        .bytes()
+                        .to_vec(),
+                ),
             )
             .await?;
         connection.stream_mut().flush().await?;

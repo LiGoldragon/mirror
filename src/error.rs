@@ -29,14 +29,8 @@ pub enum Error {
     #[error("triad frame: {0}")]
     Frame(#[from] FrameError),
 
-    #[error("ordinary signal frame: {0}")]
-    OrdinarySignalFrame(signal_mirror::SignalFrameError),
-
-    #[error("meta signal frame: {0}")]
-    MetaSignalFrame(meta_signal_mirror::SignalFrameError),
-
-    #[error("Interface octet vector: {0}")]
-    Octet(#[from] signal_mirror::OctetRangeError),
+    #[error("signal archive: {0}")]
+    Archive(String),
 
     #[error("engine actor: {0}")]
     EngineRequest(#[from] EngineRequestError),
@@ -61,12 +55,14 @@ pub enum Error {
 
     #[error("mirror append rejected: {reason:?}")]
     MirrorAppendRejected {
-        reason: signal_mirror::z2VcyE,
-        head: Option<signal_mirror::z2VcqM>,
+        reason: signal_mirror::AppendRejectionReason,
+        head: Option<signal_mirror::HeadMark>,
     },
 
     #[error("mirror checkpoint publish rejected: {reason:?}")]
-    MirrorPublishRejected { reason: signal_mirror::z2Vcs2 },
+    MirrorPublishRejected {
+        reason: signal_mirror::PublishRejectionReason,
+    },
 
     #[error("mirror faulted: {detail}")]
     MirrorFaulted { detail: String },
@@ -97,18 +93,6 @@ pub enum Error {
 
     #[error("mirror service stopped before replying")]
     ServiceUnavailable,
-}
-
-impl From<signal_mirror::SignalFrameError> for Error {
-    fn from(error: signal_mirror::SignalFrameError) -> Self {
-        Self::OrdinarySignalFrame(error)
-    }
-}
-
-impl From<meta_signal_mirror::SignalFrameError> for Error {
-    fn from(error: meta_signal_mirror::SignalFrameError) -> Self {
-        Self::MetaSignalFrame(error)
-    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

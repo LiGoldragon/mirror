@@ -10,10 +10,12 @@ use sema_engine::{
     RecordKey, Retraction, SchemaVersion, TableReference,
 };
 use signal_mirror::{
-    z2VLxP, z2VPgu, z2VPuU, z2VSAK, z2VTXE, z2VTq5, z2VUKn, z2VUwg, z2VUxk, z2VY7x, z2VYSu, z2VZWt,
-    z2VaxY, z2VbBN, z2Vbm6, z2VbvA, z2VcqM, z2Vdqa, z2Ve8p,
+    AppendReceipt, ArtifactBytes, CheckpointArtifact, CheckpointReceipt, CheckpointSequence,
+    CommitSequence, EntryEnvelope, EntrySuffix, HeadListing, HeadMark, HeadQuery, ObjectNotice,
+    PayloadBytes, RestoreBundle, RestoreQuery, RestoreRejection, RestoreRejectionReason, StoreHead,
+    StoreName,
 };
-use signal_standard::z2VSyM;
+use signal_standard::ObjectDigest;
 
 use crate::error::Result;
 use crate::ledger::{
@@ -71,41 +73,47 @@ impl EngineRecord for StorePolicy {
 }
 
 impl HeadStamp {
-    fn from_mark(mark: &z2VcqM) -> Self {
+    fn from_mark(mark: &HeadMark) -> Self {
         Self {
-            sequence: *mark.field_0.payload(),
-            digest: mark.field_1.as_str().to_owned(),
+            sequence: u64::try_from(mark.commit_sequence).expect("nonnegative mark sequence"),
+            digest: mark.object_digest.as_str().to_owned(),
         }
     }
 
-    fn to_mark(&self) -> z2VcqM {
-        z2VcqM {
-            field_0: z2VSAK::new(self.sequence),
-            field_1: z2VSyM::new(self.digest.clone()),
+    fn to_mark(&self) -> HeadMark {
+        HeadMark {
+            commit_sequence: i64::try_from(self.sequence)
+                .expect("stored sequence fits wire integer"),
+            object_digest: self.digest.clone(),
         }
     }
 }
 
 impl ReceivedEntry {
-    fn from_envelope(store: &z2Ve8p, envelope: &z2VPuU) -> Result<Self> {
+    fn from_envelope(store: &StoreName, envelope: &EntryEnvelope) -> Result<Self> {
         Ok(Self {
-            store: store.payload().clone(),
-            sequence: *envelope.field_0.payload(),
+            store: store.clone(),
+            sequence: u64::try_from(envelope.commit_sequence).expect("nonnegative entry sequence"),
             previous_digest: envelope
-                .field_1
+                .object_digest_option
                 .as_ref()
                 .map(|digest| digest.as_str().to_owned()),
-            digest: envelope.field_2.as_str().to_owned(),
-            payload: envelope.field_3.octets()?,
+            digest: envelope.object_digest.as_str().to_owned(),
+            payload: envelope
+                .payload_bytes
+                .iter()
+                .map(|value| u8::try_from(*value))
+                .collect::<std::result::Result<Vec<_>, _>>()?,
         })
     }
 
-    fn to_envelope(&self) -> z2VPuU {
-        z2VPuU {
-            field_0: z2VSAK::new(self.sequence),
-            field_1: self.previous_digest.clone().map(z2VSyM::new),
-            field_2: z2VSyM::new(self.digest.clone()),
-            field_3: z2VUwg::from_octets(&self.payload),
+    fn to_envelope(&self) -> EntryEnvelope {
+        EntryEnvelope {
+            commit_sequence: i64::try_from(self.sequence)
+                .expect("stored sequence fits wire integer"),
+            object_digest_option: self.previous_digest.clone(),
+            object_digest: self.digest.clone(),
+            payload_bytes: self.payload.iter().map(|value| i64::from(*value)).collect(),
         }
     }
 
@@ -125,46 +133,62 @@ impl ReceivedEntry {
 }
 
 impl StoredCheckpoint {
-    fn from_artifact(artifact: &z2VTXE) -> Result<Self> {
+    fn from_artifact(artifact: &CheckpointArtifact) -> Result<Self> {
         Ok(Self {
-            store: artifact.field_0.payload().clone(),
-            checkpoint_sequence: *artifact.field_1.payload(),
-            covered_end_sequence: *artifact.field_2.payload(),
-            digest: artifact.field_3.as_str().to_owned(),
-            artifact: artifact.field_4.octets()?,
+            store: artifact.store_name.clone(),
+            checkpoint_sequence: u64::try_from(artifact.checkpoint_sequence)
+                .expect("nonnegative checkpoint sequence"),
+            covered_end_sequence: u64::try_from(artifact.commit_sequence)
+                .expect("nonnegative commit sequence"),
+            digest: artifact.object_digest.as_str().to_owned(),
+            artifact: artifact
+                .artifact_bytes
+                .iter()
+                .map(|value| u8::try_from(*value))
+                .collect::<std::result::Result<Vec<_>, _>>()?,
         })
     }
 
-    fn to_artifact(&self) -> z2VTXE {
-        z2VTXE {
-            field_0: z2Ve8p::new(self.store.clone()),
-            field_1: z2VUKn::new(self.checkpoint_sequence),
-            field_2: z2VSAK::new(self.covered_end_sequence),
-            field_3: z2VSyM::new(self.digest.clone()),
-            field_4: z2VUxk::from_octets(&self.artifact),
+    fn to_artifact(&self) -> CheckpointArtifact {
+        CheckpointArtifact {
+            store_name: self.store.clone(),
+            checkpoint_sequence: i64::try_from(self.checkpoint_sequence)
+                .expect("stored checkpoint sequence fits wire integer"),
+            commit_sequence: i64::try_from(self.covered_end_sequence)
+                .expect("stored commit sequence fits wire integer"),
+            object_digest: self.digest.clone(),
+            artifact_bytes: self
+                .artifact
+                .iter()
+                .map(|value| i64::from(*value))
+                .collect(),
         }
     }
 
-    fn to_receipt(&self) -> z2VLxP {
-        z2VLxP {
-            field_0: z2Ve8p::new(self.store.clone()),
-            field_1: z2VUKn::new(self.checkpoint_sequence),
-            field_2: z2VSAK::new(self.covered_end_sequence),
+    fn to_receipt(&self) -> CheckpointReceipt {
+        CheckpointReceipt {
+            store_name: self.store.clone(),
+            checkpoint_sequence: i64::try_from(self.checkpoint_sequence)
+                .expect("stored checkpoint sequence fits wire integer"),
+            commit_sequence: i64::try_from(self.covered_end_sequence)
+                .expect("stored commit sequence fits wire integer"),
         }
     }
 }
 
 impl RetentionSetting {
-    fn from_order(order: &meta_signal_mirror::z2VXLU) -> Self {
+    fn from_order(order: &meta_signal_mirror::RetentionOrder) -> Self {
         Self {
-            scope: match &order.field_0 {
-                meta_signal_mirror::z2VTJB::z2VXE8(store) => Some(store.payload().clone()),
-                meta_signal_mirror::z2VTJB::z2VcDy => None,
+            scope: match &order.retention_scope {
+                meta_signal_mirror::RetentionScope::Store(store) => Some(store.clone()),
+                meta_signal_mirror::RetentionScope::AllStores => None,
             },
-            rule: match &order.field_1 {
-                meta_signal_mirror::z2VWXC::z2VaQ8 => RetentionRule::KeepEverything,
-                meta_signal_mirror::z2VWXC::z2VXbW(count) => {
-                    RetentionRule::KeepLatestCheckpoints(*count.payload())
+            rule: match &order.retention_rule {
+                meta_signal_mirror::RetentionRule::KeepEverything => RetentionRule::KeepEverything,
+                meta_signal_mirror::RetentionRule::KeepLatestCheckpoints(count) => {
+                    RetentionRule::KeepLatestCheckpoints(
+                        u64::try_from(*count).expect("validated retention count"),
+                    )
                 }
             },
         }
@@ -201,19 +225,17 @@ impl Store {
         })
     }
 
-    fn head_row(&self, store: &z2Ve8p) -> Result<Option<StoredHead>> {
-        let snapshot = self.engine.match_records(QueryPlan::key(
-            self.heads,
-            RecordKey::new(store.payload().clone()),
-        ))?;
+    fn head_row(&self, store: &StoreName) -> Result<Option<StoredHead>> {
+        let snapshot = self
+            .engine
+            .match_records(QueryPlan::key(self.heads, RecordKey::new(store.clone())))?;
         Ok(snapshot.records().first().cloned())
     }
 
-    fn policy_row(&self, store: &z2Ve8p) -> Result<Option<StorePolicy>> {
-        let snapshot = self.engine.match_records(QueryPlan::key(
-            self.policies,
-            RecordKey::new(store.payload().clone()),
-        ))?;
+    fn policy_row(&self, store: &StoreName) -> Result<Option<StorePolicy>> {
+        let snapshot = self
+            .engine
+            .match_records(QueryPlan::key(self.policies, RecordKey::new(store.clone())))?;
         Ok(snapshot.records().first().cloned())
     }
 
@@ -225,17 +247,17 @@ impl Store {
             .to_vec())
     }
 
-    fn sequence_key(store: &z2Ve8p, sequence: u64) -> RecordKey {
+    fn sequence_key(store: &StoreName, sequence: u64) -> RecordKey {
         RecordKey::new(format!(
             "{}{}{:0width$}",
-            store.payload(),
+            store,
             KEY_SEPARATOR,
             sequence,
             width = SEQUENCE_KEY_WIDTH
         ))
     }
 
-    fn latest_checkpoint_row(&self, store: &z2Ve8p) -> Result<Option<StoredCheckpoint>> {
+    fn latest_checkpoint_row(&self, store: &StoreName) -> Result<Option<StoredCheckpoint>> {
         let range = KeyRange::between(
             Self::sequence_key(store, 0),
             Self::sequence_key(store, u64::MAX),
@@ -250,7 +272,7 @@ impl Store {
 
     pub fn load_ledger(
         &self,
-        store: &z2Ve8p,
+        store: &StoreName,
         sequence_range: Option<(u64, u64)>,
     ) -> Result<StoreLedger> {
         let Some(head_row) = self.head_row(store)? else {
@@ -276,45 +298,49 @@ impl Store {
             known,
             self.latest_checkpoint_row(store)?
                 .as_ref()
-                .map(StoredCheckpoint::to_receipt),
+                .map(StoredCheckpoint::to_artifact),
             addressing,
         )))
     }
 
-    pub fn check_append(&self, request: z2VTq5) -> Result<CheckedAppend> {
-        let range = request.field_2.first().map(|first| {
-            let first_sequence = *first.field_0.payload();
+    pub fn check_append(&self, request: EntrySuffix) -> Result<CheckedAppend> {
+        let range = request.entry_envelope_vector.first().map(|first| {
+            let first_sequence =
+                u64::try_from(first.commit_sequence).expect("nonnegative first sequence");
             let last_sequence = request
-                .field_2
+                .entry_envelope_vector
                 .last()
-                .map_or(first_sequence, |entry| *entry.field_0.payload());
+                .map_or(first_sequence, |entry| {
+                    u64::try_from(entry.commit_sequence).expect("nonnegative entry sequence")
+                });
             (first_sequence.saturating_sub(1), last_sequence)
         });
-        let ledger = self.load_ledger(&request.field_0, range)?;
+        let ledger = self.load_ledger(&request.store_name, range)?;
         Ok(CheckedAppend {
             entry_suffix: request,
             store_ledger: ledger,
         })
     }
 
-    pub fn check_checkpoint(&self, artifact: z2VTXE) -> Result<CheckedCheckpoint> {
-        let ledger = self.load_ledger(&artifact.field_0, None)?;
+    pub fn check_checkpoint(&self, artifact: CheckpointArtifact) -> Result<CheckedCheckpoint> {
+        let ledger = self.load_ledger(&artifact.store_name, None)?;
         Ok(CheckedCheckpoint {
             checkpoint_artifact: artifact,
             store_ledger: ledger,
         })
     }
 
-    pub fn check_object_notice(&self, notice: z2VZWt) -> Result<CheckedObjectNotice> {
-        let sequence = *notice.field_1.field_0.payload();
-        let ledger = self.load_ledger(&notice.field_0, Some((sequence, sequence)))?;
+    pub fn check_object_notice(&self, notice: ObjectNotice) -> Result<CheckedObjectNotice> {
+        let sequence =
+            u64::try_from(notice.head_mark.commit_sequence).expect("nonnegative notice sequence");
+        let ledger = self.load_ledger(&notice.store_name, Some((sequence, sequence)))?;
         Ok(CheckedObjectNotice {
             object_notice: notice,
             store_ledger: ledger,
         })
     }
 
-    pub fn persist_suffix(&mut self, suffix: &NovelSuffix) -> Result<z2VaxY> {
+    pub fn persist_suffix(&mut self, suffix: &NovelSuffix) -> Result<AppendReceipt> {
         if !suffix.entries().is_empty() {
             self.commit_entry_rows(suffix)?;
         }
@@ -330,32 +356,39 @@ impl Store {
         Ok(())
     }
 
-    pub fn advance_head(&mut self, suffix: &NovelSuffix) -> Result<z2VaxY> {
+    pub fn advance_head(&mut self, suffix: &NovelSuffix) -> Result<AppendReceipt> {
         self.engine.mutate(Mutation::new(
             self.heads,
             StoredHead {
-                store: suffix.store_name.payload().clone(),
+                store: suffix.store_name.clone(),
                 head: Some(HeadStamp::from_mark(&suffix.head_mark)),
             },
         ))?;
-        Ok(z2VaxY {
-            field_0: suffix.store_name.clone(),
-            field_1: suffix.head_mark.clone(),
+        Ok(AppendReceipt {
+            store_name: suffix.store_name.clone(),
+            head_mark: suffix.head_mark.clone(),
         })
     }
 
-    pub fn persist_checkpoint(&mut self, artifact: &z2VTXE) -> Result<z2VLxP> {
+    pub fn persist_checkpoint(
+        &mut self,
+        artifact: &CheckpointArtifact,
+    ) -> Result<CheckpointReceipt> {
         let row = StoredCheckpoint::from_artifact(artifact)?;
         let receipt = row.to_receipt();
         self.engine.assert(Assertion::new(self.checkpoints, row))?;
         Ok(receipt)
     }
 
-    pub fn name_is_keyable(store: &z2Ve8p) -> bool {
-        !store.payload().contains(KEY_SEPARATOR)
+    pub fn name_is_keyable(store: &StoreName) -> bool {
+        !store.contains(KEY_SEPARATOR)
     }
 
-    pub fn register_store(&mut self, store: &z2Ve8p, addressing: ContentAddressing) -> Result<()> {
+    pub fn register_store(
+        &mut self,
+        store: &StoreName,
+        addressing: ContentAddressing,
+    ) -> Result<()> {
         let surviving = self.entry_rows(KeyRange::between(
             Self::sequence_key(store, 0),
             Self::sequence_key(store, u64::MAX),
@@ -363,12 +396,12 @@ impl Store {
         self.engine.assert(Assertion::new(
             self.heads,
             StoredHead {
-                store: store.payload().clone(),
+                store: store.clone(),
                 head: surviving.last().map(ReceivedEntry::to_head_stamp),
             },
         ))?;
         self.upsert_policy(StorePolicy {
-            store: store.payload().clone(),
+            store: store.clone(),
             addressing,
         })
     }
@@ -386,15 +419,13 @@ impl Store {
         Ok(())
     }
 
-    pub fn retire_store(&mut self, store: &z2Ve8p) -> Result<()> {
-        self.engine.retract(Retraction::new(
-            self.heads,
-            RecordKey::new(store.payload().clone()),
-        ))?;
+    pub fn retire_store(&mut self, store: &StoreName) -> Result<()> {
+        self.engine
+            .retract(Retraction::new(self.heads, RecordKey::new(store.clone())))?;
         Ok(())
     }
 
-    pub fn persist_retention(&mut self, order: &meta_signal_mirror::z2VXLU) -> Result<()> {
+    pub fn persist_retention(&mut self, order: &meta_signal_mirror::RetentionOrder) -> Result<()> {
         let row = RetentionSetting::from_order(order);
         let key = row.record_key();
         let existing = self
@@ -408,18 +439,21 @@ impl Store {
         Ok(())
     }
 
-    pub fn load_restore(&self, query: &z2VbvA) -> Result<std::result::Result<z2VYSu, z2VbBN>> {
-        let store = query.payload();
+    pub fn load_restore(
+        &self,
+        query: &RestoreQuery,
+    ) -> Result<std::result::Result<RestoreBundle, RestoreRejection>> {
+        let store = query;
         if self.head_row(store)?.is_none() {
-            return Ok(Err(z2VbBN {
-                field_0: store.clone(),
-                field_1: z2VPgu::z2Vf1c,
+            return Ok(Err(RestoreRejection {
+                store_name: store.clone(),
+                restore_rejection_reason: RestoreRejectionReason::NoCheckpoint,
             }));
         }
         let Some(checkpoint) = self.latest_checkpoint_row(store)? else {
-            return Ok(Err(z2VbBN {
-                field_0: store.clone(),
-                field_1: z2VPgu::z2VXM2,
+            return Ok(Err(RestoreRejection {
+                store_name: store.clone(),
+                restore_rejection_reason: RestoreRejectionReason::UnknownStore,
             }));
         };
         let suffix = self
@@ -430,14 +464,14 @@ impl Store {
             .iter()
             .map(ReceivedEntry::to_envelope)
             .collect();
-        Ok(Ok(z2VYSu {
-            field_0: store.clone(),
-            field_1: checkpoint.to_artifact(),
-            field_2: suffix,
+        Ok(Ok(RestoreBundle {
+            store_name: store.clone(),
+            checkpoint_artifact: checkpoint.to_artifact(),
+            entry_envelope_vector: suffix,
         }))
     }
 
-    pub fn landed_entries(&self, store: &z2Ve8p) -> Result<Vec<z2VPuU>> {
+    pub fn landed_entries(&self, store: &StoreName) -> Result<Vec<EntryEnvelope>> {
         Ok(self
             .entry_rows(KeyRange::between(
                 Self::sequence_key(store, 0),
@@ -448,8 +482,8 @@ impl Store {
             .collect())
     }
 
-    pub fn load_heads(&self, query: &z2Vdqa) -> Result<z2VY7x> {
-        let rows = match query.payload() {
+    pub fn load_heads(&self, query: &HeadQuery) -> Result<HeadListing> {
+        let rows = match query {
             Some(store) => self.head_row(store)?.into_iter().collect(),
             None => self
                 .engine
@@ -457,25 +491,22 @@ impl Store {
                 .records()
                 .to_vec(),
         };
-        Ok(z2VY7x {
-            field_0: rows
+        Ok(HeadListing {
+            store_head_vector: rows
                 .iter()
-                .map(|row| z2Vbm6 {
-                    field_0: z2Ve8p::new(row.store.clone()),
-                    field_1: row.head.as_ref().map(HeadStamp::to_mark),
+                .map(|row| StoreHead {
+                    store_name: row.store.clone(),
+                    head_mark_option: row.head.as_ref().map(HeadStamp::to_mark),
                 })
                 .collect(),
         })
     }
 
-    pub fn load_registry(&self) -> Result<meta_signal_mirror::z2VQWA> {
+    pub fn load_registry(&self) -> Result<meta_signal_mirror::RegistryListing> {
         let rows = self.engine.match_records(QueryPlan::all(self.heads))?;
-        Ok(meta_signal_mirror::z2VQWA::new(
-            rows.records()
-                .iter()
-                .map(|row| meta_signal_mirror::z2VT8Z::new(z2Ve8p::new(row.store.clone())))
-                .collect(),
-        ))
+        Ok(meta_signal_mirror::RegistryListing {
+            registered_store_vector: rows.records().iter().map(|row| row.store.clone()).collect(),
+        })
     }
 
     pub fn engine(&self) -> &Engine {

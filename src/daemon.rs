@@ -11,6 +11,14 @@ use crate::config::{Configuration, ConfigurationError};
 use crate::engine::Engine;
 use crate::error::Error;
 use crate::service::{Service, ServiceLink};
+use meta_signal_mirror::{
+    ByteViewable as MetaByteViewable, Restorable as MetaRestorable, Signal as MetaSignal,
+    Signalizable as MetaSignalizable,
+};
+use signal_mirror::{
+    ByteViewable as WorkingByteViewable, Restorable as WorkingRestorable, Signal as WorkingSignal,
+    Signalizable as WorkingSignalizable,
+};
 
 const MAXIMUM_FRAME_BYTES: usize = 1024 * 1024;
 const REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(10);
@@ -48,13 +56,16 @@ impl ComponentDaemon for Daemon {
         )
         .await
         .map_err(|_| Error::RequestReadTimedOut)??;
-        let (exchange, input) =
-            signal_mirror::ContractMarker::decode_single_request(&body.into_bytes())?;
+        let input =
+            rkyv::from_bytes::<signal_mirror::Query, rkyv::rancor::Error>(&body.into_bytes())
+                .map_err(|error| Error::Archive(error.to_string()))?;
         let output = engine.working(input, *connection.context()).await?;
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&output)
+            .map_err(|error| Error::Archive(error.to_string()))?;
         codec
             .write_body_async(
                 connection.stream_mut(),
-                &FrameBody::new(output.encode_reply_frame(exchange)?),
+                &FrameBody::new(bytes.bytes().to_vec()),
             )
             .await?;
         connection.stream_mut().flush().await?;
@@ -72,13 +83,16 @@ impl ComponentDaemon for Daemon {
         )
         .await
         .map_err(|_| Error::RequestReadTimedOut)??;
-        let (exchange, input) =
-            meta_signal_mirror::ContractMarker::decode_single_request(&body.into_bytes())?;
+        let input =
+            rkyv::from_bytes::<meta_signal_mirror::Query, rkyv::rancor::Error>(&body.into_bytes())
+                .map_err(|error| Error::Archive(error.to_string()))?;
         let output = engine.meta(input).await?;
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&output)
+            .map_err(|error| Error::Archive(error.to_string()))?;
         codec
             .write_body_async(
                 connection.stream_mut(),
-                &FrameBody::new(output.encode_reply_frame(exchange)?),
+                &FrameBody::new(bytes.bytes().to_vec()),
             )
             .await?;
         connection.stream_mut().flush().await?;

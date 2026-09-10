@@ -1,6 +1,6 @@
 [package]
 name         = "mirror"
-version      = "0.3.0"
+version      = "1.0.0"
 edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
@@ -39,21 +39,23 @@ path = "src/bin/mirror_landed_body_verifier.rs"
 required-features = ["witness"]
 
 [features]
-default = ["dotos-text"]
+default = []
 # Dotos is the human/agent text surface at the CLI edges. The daemon itself
 # receives only allocated binary Signal frames.
-dotos-text = ["dep:dotos", "signal-mirror/dotos-text", "meta-signal-mirror/dotos-text"]
+datom-cli = ["dep:datom-codec", "dep:protos", "signal-mirror/datom", "meta-signal-mirror/datom"]
+dotos-text = ["datom-cli"]
 # witness builds the two-VM witness verifier bin alongside the Dotos CLIs
 # (the witness package node-b installs needs both). It adds no new dependency.
-witness = ["dotos-text"]
+witness = ["datom-cli"]
 
 [dependencies]
-meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", rev = "c14fc141ea46652eb1bfbcd6138d08578864e6c5", default-features = false }
-dotos               = { git = "https://github.com/LiGoldragon/dotos.git", rev = "80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3", optional = true }
+meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", rev = "bdc76bcdd09107a3d039ad434b772e3474861520", default-features = false }
+datom-codec = { git = "https://github.com/LiGoldragon/datom-codec", rev = "f2cc06858d38a4028c928d33323a6d682e7c222f", optional = true }
+protos = { git = "https://github.com/LiGoldragon/protos", rev = "b543678cfc8609529cea7174eb4af8a64daa54ad", optional = true }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
 sema-engine        = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "7158e5503f37fd2fbca1d707f134e38a3fda1176" }
-signal-mirror      = { git = "https://github.com/LiGoldragon/signal-mirror.git", rev = "d57830076840f0e1ef89352823d7b0356a7c96df", default-features = false }
-signal-standard    = { git = "https://github.com/LiGoldragon/signal-standard.git", rev = "d5a4a545e61dafec30667f2af38ca503ab6d6d3f", default-features = false }
+signal-mirror      = { git = "https://github.com/LiGoldragon/signal-mirror.git", rev = "e6c565caac516dae3fc679ea5e110828580f3d57", default-features = false }
+signal-standard    = { git = "https://github.com/LiGoldragon/signal-standard.git", rev = "2c90fc9976b3af33f49cdf83bb33f7f246ae2b60", default-features = false }
 signal-frame-interface = { package = "signal-frame", git = "https://github.com/LiGoldragon/signal-frame.git", rev = "01676293a623d97b65e320d4138c4b480c6d5dad" }
 thiserror          = "2"
 tokio              = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }

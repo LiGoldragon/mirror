@@ -5,17 +5,19 @@
 //! external Interface under readable public aliases.
 
 use rkyv::{Archive, Deserialize, Serialize};
-use signal_mirror::{z2VLxP, z2VPuU, z2VTXE, z2VTq5, z2VZWt, z2VcqM, z2Ve8p};
+use signal_mirror::{
+    CheckpointArtifact, EntryEnvelope, EntrySuffix, HeadMark, ObjectNotice, StoreName,
+};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NovelSuffix {
-    pub store_name: z2Ve8p,
-    pub head_mark: z2VcqM,
-    entries: Vec<z2VPuU>,
+    pub store_name: StoreName,
+    pub head_mark: HeadMark,
+    entries: Vec<EntryEnvelope>,
 }
 
 impl NovelSuffix {
-    pub fn new(store_name: z2Ve8p, head_mark: z2VcqM, entries: Vec<z2VPuU>) -> Self {
+    pub fn new(store_name: StoreName, head_mark: HeadMark, entries: Vec<EntryEnvelope>) -> Self {
         Self {
             store_name,
             head_mark,
@@ -23,12 +25,12 @@ impl NovelSuffix {
         }
     }
 
-    pub fn entries(&self) -> &[z2VPuU] {
+    pub fn entries(&self) -> &[EntryEnvelope] {
         &self.entries
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct KnownEntry {
     pub sequence: u64,
     pub digest: String,
@@ -41,27 +43,27 @@ pub enum ContentAddressing {
 }
 
 impl ContentAddressing {
-    pub fn from_meta(addressing: &meta_signal_mirror::z2VMYP) -> Self {
+    pub fn from_meta(addressing: &meta_signal_mirror::ContentAddressing) -> Self {
         match addressing {
-            meta_signal_mirror::z2VMYP::z2Vf8Y => Self::Opaque,
-            meta_signal_mirror::z2VMYP::z2VbgN => Self::SemaVersionedLog,
+            meta_signal_mirror::ContentAddressing::Opaque => Self::Opaque,
+            meta_signal_mirror::ContentAddressing::SemaVersionedLog => Self::SemaVersionedLog,
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RegisteredLedger {
-    head: Option<z2VcqM>,
+    head: Option<HeadMark>,
     known: Vec<KnownEntry>,
-    latest_checkpoint: Option<z2VLxP>,
+    latest_checkpoint: Option<CheckpointArtifact>,
     addressing: ContentAddressing,
 }
 
 impl RegisteredLedger {
     pub fn new(
-        head: Option<z2VcqM>,
+        head: Option<HeadMark>,
         known: Vec<KnownEntry>,
-        latest_checkpoint: Option<z2VLxP>,
+        latest_checkpoint: Option<CheckpointArtifact>,
         addressing: ContentAddressing,
     ) -> Self {
         Self {
@@ -72,7 +74,7 @@ impl RegisteredLedger {
         }
     }
 
-    pub fn head(&self) -> Option<&z2VcqM> {
+    pub fn head(&self) -> Option<&HeadMark> {
         self.head.as_ref()
     }
 
@@ -80,7 +82,7 @@ impl RegisteredLedger {
         &self.known
     }
 
-    pub fn latest_checkpoint(&self) -> Option<&z2VLxP> {
+    pub fn latest_checkpoint(&self) -> Option<&CheckpointArtifact> {
         self.latest_checkpoint.as_ref()
     }
 
@@ -89,43 +91,43 @@ impl RegisteredLedger {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum StoreLedger {
     Registered(RegisteredLedger),
     Unregistered,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CheckedAppend {
-    pub entry_suffix: z2VTq5,
+    pub entry_suffix: EntrySuffix,
     pub store_ledger: StoreLedger,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CheckedCheckpoint {
-    pub checkpoint_artifact: z2VTXE,
+    pub checkpoint_artifact: CheckpointArtifact,
     pub store_ledger: StoreLedger,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CheckedObjectNotice {
-    pub object_notice: z2VZWt,
+    pub object_notice: ObjectNotice,
     pub store_ledger: StoreLedger,
 }
 
-#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct HeadStamp {
     pub sequence: u64,
     pub digest: String,
 }
 
-#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct StoredHead {
     pub store: String,
     pub head: Option<HeadStamp>,
 }
 
-#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct ReceivedEntry {
     pub store: String,
     pub sequence: u64,
@@ -134,7 +136,7 @@ pub struct ReceivedEntry {
     pub payload: Vec<u8>,
 }
 
-#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct StoredCheckpoint {
     pub store: String,
     pub checkpoint_sequence: u64,
@@ -143,19 +145,19 @@ pub struct StoredCheckpoint {
     pub artifact: Vec<u8>,
 }
 
-#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum RetentionRule {
     KeepEverything,
     KeepLatestCheckpoints(u64),
 }
 
-#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct RetentionSetting {
     pub scope: Option<String>,
     pub rule: RetentionRule,
 }
 
-#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct StorePolicy {
     pub store: String,
     pub addressing: ContentAddressing,

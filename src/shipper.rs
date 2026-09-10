@@ -6,11 +6,9 @@ use std::sync::Arc;
 use sema_engine::{
     Engine as ComponentEngine, MirrorHead, VersionedCommitLogEntry, VersionedStoreName,
 };
-use signal_frame_interface::{
-    ExchangeIdentifier, ExchangeLane, LaneSequence, Reply, SessionEpoch, SubReply,
-};
 use signal_mirror::{
-    z2VLxP, z2VPuU, z2VSAK, z2VTXE, z2VTq5, z2VTqL, z2VUKn, z2VUwg, z2VUxk, z2VVny, z2VcqM, z2Ve8p,
+    ByteViewable, Query, Response, Restorable, Signal, Signalizable, z2VLxP, z2VPuU, z2VSAK,
+    z2VTXE, z2VTq5, z2VUKn, z2VUwg, z2VUxk, z2VcqM, z2Ve8p,
 };
 use signal_standard::z2VSyM;
 use tokio::io::AsyncWriteExt;
@@ -35,38 +33,26 @@ impl MirrorTailnetClient {
         self.address
     }
 
-    pub async fn exchange(&self, input: z2VVny) -> Result<z2VTqL> {
+    pub async fn exchange(&self, input: Query) -> Result<Response> {
         let codec = LengthPrefixedCodec::default();
         let mut stream = TcpStream::connect(self.address).await?;
-        let exchange = ExchangeIdentifier::new(
-            SessionEpoch::new(0),
-            ExchangeLane::Connector,
-            LaneSequence::first(),
-        );
         codec
             .write_body_async(
                 &mut stream,
-                &FrameBody::new(input.encode_request_frame(exchange)?),
+                &FrameBody::new(
+                    input
+                        .signalize()
+                        .map_err(|error| Error::Archive(error.to_string()))?
+                        .bytes()
+                        .to_vec(),
+                ),
             )
             .await?;
         stream.flush().await?;
         let reply = codec.read_body_async(&mut stream).await?;
-        match signal_mirror::ContractMarker::decode_frame(&reply.into_bytes())?.into_body() {
-            signal_mirror::FrameBody::Reply { reply, .. } => match reply {
-                Reply::Accepted { per_operation, .. } => match per_operation.into_head() {
-                    SubReply::Ok(output) => Ok(output),
-                    other => Err(Error::UnexpectedSubReply {
-                        actual: format!("{other:?}"),
-                    }),
-                },
-                Reply::Rejected { reason } => Err(Error::ReplyRejected {
-                    reason: reason.to_string(),
-                }),
-            },
-            other => Err(Error::UnexpectedReplyFrame {
-                actual: format!("{other:?}"),
-            }),
-        }
+        Signal::<Response>::from(reply.into_bytes())
+            .restore()
+            .map_err(|error| Error::Archive(error.to_string()))
     }
 }
 
@@ -115,7 +101,7 @@ impl ComponentShipper {
         Self {
             engine,
             client,
-            store_name: z2Ve8p::new(store_name.as_str().to_owned()),
+            store_name: store_name.as_str().to_owned(),
         }
     }
 
@@ -131,32 +117,50 @@ impl ComponentShipper {
         self.client
     }
 
-    pub fn store_name(&self) -> &z2Ve8p {
+    pub fn store_name(&self) -> &String {
         &self.store_name
     }
 
-    pub fn envelope_for_entry(&self, entry: &VersionedCommitLogEntry) -> Result<z2VPuU> {
+    pub fn envelope_for_entry(
+        &self,
+        entry: &VersionedCommitLogEntry,
+    ) -> Result<signal_mirror::EntryEnvelope> {
         let payload = rkyv::to_bytes::<rkyv::rancor::Error>(entry).map_err(|source| {
             Error::PayloadEncode {
                 surface: "versioned entry",
                 message: source.to_string(),
             }
         })?;
-        Ok(z2VPuU {
-            field_0: z2VSAK::new(entry.commit_sequence().value()),
-            field_1: entry
+        Ok(signal_mirror::EntryEnvelope {
+            commit_sequence: i64::try_from(entry.commit_sequence().value()).map_err(|error| {
+                Error::PayloadEncode {
+                    surface: "entry sequence",
+                    message: error.to_string(),
+                }
+            })?,
+            object_digest_option: entry
                 .previous_entry_digest()
-                .map(|digest| z2VSyM::new(digest_text(digest.bytes()))),
-            field_2: z2VSyM::new(digest_text(entry.entry_digest().bytes())),
-            field_3: z2VUwg::from_octets(&payload),
+                .map(|digest| digest_text(digest.bytes())),
+            object_digest: digest_text(entry.entry_digest().bytes()),
+            payload_bytes: payload.iter().map(|value| i64::from(*value)).collect(),
         })
     }
 
-    pub fn expected_head(&self) -> Result<Option<z2VcqM>> {
-        Ok(self.engine.mirror_head()?.map(|head| z2VcqM {
-            field_0: z2VSAK::new(head.commit_sequence().value()),
-            field_1: z2VSyM::new(digest_text(head.entry_digest().bytes())),
-        }))
+    pub fn expected_head(&self) -> Result<Option<signal_mirror::HeadMark>> {
+        self.engine
+            .mirror_head()?
+            .map(|head| {
+                Ok(signal_mirror::HeadMark {
+                    commit_sequence: i64::try_from(head.commit_sequence().value()).map_err(
+                        |error| Error::PayloadEncode {
+                            surface: "head sequence",
+                            message: error.to_string(),
+                        },
+                    )?,
+                    object_digest: digest_text(head.entry_digest().bytes()),
+                })
+            })
+            .transpose()
     }
 
     pub async fn ship_unshipped(&self) -> Result<ShipOutcome> {

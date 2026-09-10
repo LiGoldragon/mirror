@@ -5,7 +5,9 @@
 //! authority-owned Interface.
 
 use signal_mirror::{
-    z2VLxP, z2VQTe, z2VTXE, z2VUTH, z2VWFj, z2VaxY, z2VbP4, z2VcqM, z2Vcs2, z2VcyE, z2VdLR, z2Ve8p,
+    AppendReceipt, AppendRejection, AppendRejectionReason, CheckpointArtifact, CheckpointReceipt,
+    EntryEnvelope, HeadMark, ObjectNoticeReceipt, ObjectNoticeRejection,
+    ObjectNoticeRejectionReason, PublishRejection, PublishRejectionReason, StoreName,
 };
 
 use crate::ledger::{
@@ -14,24 +16,24 @@ use crate::ledger::{
 };
 use crate::readback::LandedBody;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AppendDecision {
     Accept(NovelSuffix),
-    Duplicate(z2VaxY),
-    Refuse(z2VUTH),
+    Duplicate(AppendReceipt),
+    Refuse(AppendRejection),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CheckpointDecision {
-    Accept(z2VTXE),
-    Duplicate(z2VLxP),
-    Refuse(z2VbP4),
+    Accept(CheckpointArtifact),
+    Duplicate(CheckpointReceipt),
+    Refuse(PublishRejection),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ObjectNoticeDecision {
-    Accept(z2VWFj),
-    Refuse(z2VQTe),
+    Accept(ObjectNoticeReceipt),
+    Refuse(ObjectNoticeRejection),
 }
 
 impl CheckedAppend {
@@ -41,97 +43,120 @@ impl CheckedAppend {
             store_ledger: ledger,
         } = self;
         let StoreLedger::Registered(ledger) = ledger else {
-            return AppendDecision::Refuse(append_rejection(request.field_0, z2VcyE::z2VcFn, None));
+            return AppendDecision::Refuse(append_rejection(
+                request.store_name,
+                AppendRejectionReason::UnknownStore,
+                None,
+            ));
         };
-        let entries = request.field_2;
+        let entries = request.entry_envelope_vector;
         if entries.is_empty() {
             return AppendDecision::Refuse(append_rejection(
-                request.field_0,
-                z2VcyE::z2VRBT,
+                request.store_name,
+                AppendRejectionReason::EmptySuffix,
                 ledger.head().cloned(),
             ));
         }
         if let Some(reason) = ledger.suffix_inconsistency(&entries) {
             return AppendDecision::Refuse(append_rejection(
-                request.field_0,
+                request.store_name,
                 reason,
                 ledger.head().cloned(),
             ));
         }
-        if let Some(reason) = ledger.expected_head_violation(request.field_1.as_ref(), &entries) {
+        if let Some(reason) =
+            ledger.expected_head_violation(request.head_mark_option.as_ref(), &entries)
+        {
             return AppendDecision::Refuse(append_rejection(
-                request.field_0,
+                request.store_name,
                 reason,
                 ledger.head().cloned(),
             ));
         }
         if let Some(reason) = ledger.known_divergence(&entries) {
             return AppendDecision::Refuse(append_rejection(
-                request.field_0,
+                request.store_name,
                 reason,
                 ledger.head().cloned(),
             ));
         }
         if let Some(reason) = ledger.body_addressing_violation(&entries) {
             return AppendDecision::Refuse(append_rejection(
-                request.field_0,
+                request.store_name,
                 reason,
                 ledger.head().cloned(),
             ));
         }
 
         let last = entries.last().expect("empty suffix refused");
-        let suffix_end = z2VcqM {
-            field_0: last.field_0.clone(),
-            field_1: last.field_2.clone(),
+        let suffix_end = HeadMark {
+            commit_sequence: last.commit_sequence,
+            object_digest: last.object_digest.clone(),
         };
         let novel = entries
             .into_iter()
-            .filter(|entry| ledger.known_digest(*entry.field_0.payload()).is_none())
+            .filter(|entry| {
+                ledger
+                    .known_digest(
+                        u64::try_from(entry.commit_sequence).expect("nonnegative sequence"),
+                    )
+                    .is_none()
+            })
             .collect::<Vec<_>>();
-        if novel.is_empty() && *suffix_end.field_0.payload() <= ledger.head_sequence() {
+        if novel.is_empty()
+            && u64::try_from(suffix_end.commit_sequence).expect("nonnegative sequence")
+                <= ledger.head_sequence()
+        {
             let Some(head) = ledger.head().cloned() else {
                 return AppendDecision::Refuse(append_rejection(
-                    request.field_0,
-                    z2VcyE::z2VQma,
+                    request.store_name,
+                    AppendRejectionReason::SequenceGap,
                     None,
                 ));
             };
-            return AppendDecision::Duplicate(z2VaxY {
-                field_0: request.field_0,
-                field_1: head,
+            return AppendDecision::Duplicate(AppendReceipt {
+                store_name: request.store_name,
+                head_mark: head,
             });
         }
-        AppendDecision::Accept(NovelSuffix::new(request.field_0, suffix_end, novel))
+        AppendDecision::Accept(NovelSuffix::new(request.store_name, suffix_end, novel))
     }
 }
 
-fn append_rejection(store: z2Ve8p, reason: z2VcyE, head: Option<z2VcqM>) -> z2VUTH {
-    z2VUTH {
-        field_0: store,
-        field_1: reason,
-        field_2: head,
+fn append_rejection(
+    store: StoreName,
+    reason: AppendRejectionReason,
+    head: Option<HeadMark>,
+) -> AppendRejection {
+    AppendRejection {
+        store_name: store,
+        append_rejection_reason: reason,
+        head_mark_option: head,
     }
 }
 
 impl RegisteredLedger {
     fn head_sequence(&self) -> u64 {
-        self.head().map_or(0, |head| *head.field_0.payload())
+        self.head().map_or(0, |head| {
+            u64::try_from(head.commit_sequence).expect("nonnegative sequence")
+        })
     }
 
     fn known_digest(&self, sequence: u64) -> Option<&KnownEntry> {
         self.known().iter().find(|entry| entry.sequence == sequence)
     }
 
-    fn suffix_inconsistency(&self, entries: &[signal_mirror::z2VPuU]) -> Option<z2VcyE> {
+    fn suffix_inconsistency(&self, entries: &[EntryEnvelope]) -> Option<AppendRejectionReason> {
         for window in entries.windows(2) {
             let previous = &window[0];
             let next = &window[1];
-            if *next.field_0.payload() != *previous.field_0.payload() + 1 {
-                return Some(z2VcyE::z2VQma);
+            if u64::try_from(next.commit_sequence).expect("nonnegative sequence")
+                != u64::try_from(previous.commit_sequence).expect("nonnegative sequence") + 1
+            {
+                return Some(AppendRejectionReason::SequenceGap);
             }
-            if next.field_1.as_ref() != Some(&previous.field_2) {
-                return Some(z2VcyE::z2VZT1);
+            if next.object_digest_option.as_ref() != Some(&previous.object_digest) {
+                return Some(AppendRejectionReason::DigestMismatch);
             }
         }
         None
@@ -139,56 +164,69 @@ impl RegisteredLedger {
 
     fn expected_head_violation(
         &self,
-        expected: Option<&z2VcqM>,
-        entries: &[signal_mirror::z2VPuU],
-    ) -> Option<z2VcyE> {
+        expected: Option<&HeadMark>,
+        entries: &[EntryEnvelope],
+    ) -> Option<AppendRejectionReason> {
         let first = entries.first()?;
-        let first_sequence = *first.field_0.payload();
+        let first_sequence = u64::try_from(first.commit_sequence).expect("nonnegative sequence");
         match expected {
-            None if first_sequence != 1 || first.field_1.is_some() => Some(z2VcyE::z2VQma),
+            None if first_sequence != 1 || first.object_digest_option.is_some() => {
+                Some(AppendRejectionReason::SequenceGap)
+            }
             None => None,
             Some(mark) => {
-                let mark_sequence = *mark.field_0.payload();
+                let mark_sequence =
+                    u64::try_from(mark.commit_sequence).expect("nonnegative sequence");
                 if mark_sequence + 1 != first_sequence {
-                    return Some(z2VcyE::z2VQma);
+                    return Some(AppendRejectionReason::SequenceGap);
                 }
-                if first.field_1.as_ref() != Some(&mark.field_1) {
-                    return Some(z2VcyE::z2VPd1);
+                if first.object_digest_option.as_ref() != Some(&mark.object_digest) {
+                    return Some(AppendRejectionReason::HeadForked);
                 }
                 match self.known_digest(mark_sequence) {
-                    Some(known) if known.digest == mark.field_1.as_str() => None,
-                    Some(_) => Some(z2VcyE::z2VZT1),
-                    None => Some(z2VcyE::z2VQma),
+                    Some(known) if known.digest == mark.object_digest.as_str() => None,
+                    Some(_) => Some(AppendRejectionReason::DigestMismatch),
+                    None => Some(AppendRejectionReason::SequenceGap),
                 }
             }
         }
     }
 
-    fn known_divergence(&self, entries: &[signal_mirror::z2VPuU]) -> Option<z2VcyE> {
+    fn known_divergence(&self, entries: &[EntryEnvelope]) -> Option<AppendRejectionReason> {
         let head_sequence = self.head_sequence();
         for entry in entries {
-            let sequence = *entry.field_0.payload();
+            let sequence = u64::try_from(entry.commit_sequence).expect("nonnegative sequence");
             match self.known_digest(sequence) {
-                Some(known) if known.digest == entry.field_2.as_str() => {}
-                Some(_) => return Some(z2VcyE::z2VPd1),
-                None if sequence <= head_sequence => return Some(z2VcyE::z2VQma),
+                Some(known) if known.digest == entry.object_digest.as_str() => {}
+                Some(_) => return Some(AppendRejectionReason::HeadForked),
+                None if sequence <= head_sequence => {
+                    return Some(AppendRejectionReason::SequenceGap);
+                }
                 None => {}
             }
         }
         None
     }
 
-    fn body_addressing_violation(&self, entries: &[signal_mirror::z2VPuU]) -> Option<z2VcyE> {
+    fn body_addressing_violation(
+        &self,
+        entries: &[EntryEnvelope],
+    ) -> Option<AppendRejectionReason> {
         match self.addressing() {
             ContentAddressing::Opaque => None,
             ContentAddressing::SemaVersionedLog => entries
                 .iter()
                 .find(|entry| {
-                    entry.field_3.octets().map_or(true, |octets| {
-                        !LandedBody::new(&octets).addresses_to(&entry.field_2)
-                    })
+                    entry
+                        .payload_bytes
+                        .iter()
+                        .map(|value| u8::try_from(*value))
+                        .collect::<std::result::Result<Vec<_>, _>>()
+                        .map_or(true, |octets| {
+                            !LandedBody::new(&octets).addresses_to(&entry.object_digest)
+                        })
                 })
-                .map(|_| z2VcyE::z2VPd1),
+                .map(|_| AppendRejectionReason::HeadForked),
         }
     }
 }
@@ -200,25 +238,33 @@ impl CheckedCheckpoint {
             store_ledger: ledger,
         } = self;
         let StoreLedger::Registered(ledger) = ledger else {
-            return CheckpointDecision::Refuse(z2VbP4 {
-                field_0: artifact.field_0,
-                field_1: z2Vcs2::z2VWLf,
+            return CheckpointDecision::Refuse(PublishRejection {
+                store_name: artifact.store_name,
+                publish_rejection_reason: PublishRejectionReason::UnknownStore,
             });
         };
         match ledger.latest_checkpoint() {
             None => CheckpointDecision::Accept(artifact),
             Some(latest) => {
-                let latest_sequence = *latest.field_1.payload();
-                let artifact_sequence = *artifact.field_1.payload();
-                if artifact_sequence == latest_sequence && artifact.field_2 == latest.field_2 {
-                    return CheckpointDecision::Duplicate(latest.clone());
+                let latest_sequence =
+                    u64::try_from(latest.checkpoint_sequence).expect("nonnegative checkpoint");
+                let artifact_sequence =
+                    u64::try_from(artifact.checkpoint_sequence).expect("nonnegative checkpoint");
+                if artifact_sequence == latest_sequence
+                    && artifact.commit_sequence == latest.commit_sequence
+                {
+                    return CheckpointDecision::Duplicate(CheckpointReceipt {
+                        store_name: latest.store_name.clone(),
+                        checkpoint_sequence: latest.checkpoint_sequence,
+                        commit_sequence: latest.commit_sequence,
+                    });
                 }
                 if artifact_sequence <= latest_sequence
-                    || *artifact.field_2.payload() < *latest.field_2.payload()
+                    || artifact.commit_sequence < latest.commit_sequence
                 {
-                    return CheckpointDecision::Refuse(z2VbP4 {
-                        field_0: artifact.field_0,
-                        field_1: z2Vcs2::z2VLE1,
+                    return CheckpointDecision::Refuse(PublishRejection {
+                        store_name: artifact.store_name,
+                        publish_rejection_reason: PublishRejectionReason::CoverageRegressed,
                     });
                 }
                 CheckpointDecision::Accept(artifact)
@@ -234,30 +280,31 @@ impl CheckedObjectNotice {
             store_ledger: ledger,
         } = self;
         let StoreLedger::Registered(ledger) = ledger else {
-            return ObjectNoticeDecision::Refuse(z2VQTe {
-                field_0: notice.field_0,
-                field_1: z2VdLR::z2VZJ4,
-                field_2: None,
+            return ObjectNoticeDecision::Refuse(ObjectNoticeRejection {
+                store_name: notice.store_name,
+                object_notice_rejection_reason: ObjectNoticeRejectionReason::UnknownStore,
+                head_mark_option: None,
             });
         };
-        if ledger.has_known_head(&notice.field_1) {
-            return ObjectNoticeDecision::Accept(z2VWFj {
-                field_0: notice.field_0,
-                field_1: notice.field_1,
+        if ledger.has_known_head(&notice.head_mark) {
+            return ObjectNoticeDecision::Accept(ObjectNoticeReceipt {
+                store_name: notice.store_name,
+                head_mark: notice.head_mark,
             });
         }
-        ObjectNoticeDecision::Refuse(z2VQTe {
-            field_0: notice.field_0,
-            field_1: z2VdLR::z2VLZN,
-            field_2: ledger.head().cloned(),
+        ObjectNoticeDecision::Refuse(ObjectNoticeRejection {
+            store_name: notice.store_name,
+            object_notice_rejection_reason: ObjectNoticeRejectionReason::HeadBehind,
+            head_mark_option: ledger.head().cloned(),
         })
     }
 }
 
 impl RegisteredLedger {
-    fn has_known_head(&self, head: &z2VcqM) -> bool {
+    fn has_known_head(&self, head: &HeadMark) -> bool {
         self.known().iter().any(|known| {
-            known.sequence == *head.field_0.payload() && known.digest == head.field_1.as_str()
+            known.sequence == u64::try_from(head.commit_sequence).expect("nonnegative sequence")
+                && known.digest == head.object_digest.as_str()
         })
     }
 }
