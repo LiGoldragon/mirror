@@ -3,7 +3,7 @@
 //! The mirror is payload-blind: it lands and returns the carried octets
 //! verbatim. A witness that wants to prove a landed body is the genuine,
 //! intact record — not a substituted or corrupted payload — re-derives the
-//! body's content address through sema-engine's OWN content-addressing and
+//! body's content address through memory-engine's OWN content-addressing and
 //! compares it to the head the mirror reports.
 //!
 //! `LandedBody` is the single source of truth for that re-hash: both the
@@ -12,7 +12,7 @@
 //! through it, so the logic the live VM exercises is exactly the logic a fast
 //! Nix check proves.
 
-use sema_engine::{EntryDigest, VersionedCommitLogEntry};
+use memory_engine::{EntryDigest, VersionedCommitLogEntry};
 
 use crate::error::{Error, Result};
 
@@ -58,7 +58,7 @@ impl<'octets> LandedBody<'octets> {
     /// re-derives a different digest, and a body that does not decode at
     /// all, both answer `false` — never a panic. This is the append-time
     /// twin of the post-landing verifier's check
-    /// (`mirror-landed-body-verifier`), re-deriving through sema-engine's
+    /// (`mirror-landed-body-verifier`), re-deriving through memory-engine's
     /// own content-addressing.
     pub fn addresses_to(&self, digest: &signal_standard::z2VSyM) -> bool {
         self.content_address().is_ok_and(|rederived| {

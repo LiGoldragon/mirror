@@ -37,14 +37,14 @@ pub struct KnownEntry {
 #[derive(Archive, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ContentAddressing {
     Opaque,
-    SemaVersionedLog,
+    MemoryVersionedLog,
 }
 
 impl ContentAddressing {
     pub fn from_meta(addressing: &meta_signal_mirror::z2VMYP) -> Self {
         match addressing {
             meta_signal_mirror::z2VMYP::z2Vf8Y => Self::Opaque,
-            meta_signal_mirror::z2VMYP::z2VbgN => Self::SemaVersionedLog,
+            meta_signal_mirror::z2VMYP::z2VbgN => Self::MemoryVersionedLog,
         }
     }
 }
@@ -164,7 +164,7 @@ pub struct StorePolicy {
 pub struct RecordFamily;
 
 impl RecordFamily {
-    pub const STORE_NAME: &'static str = "mirror:sema";
+    pub const STORE_NAME: &'static str = "mirror:memory";
 
     const HEAD_SHAPE: &'static str =
         "mirror.StoredHead.v2{store:String,head:Option<{sequence:u64,digest:String}>}";
@@ -172,30 +172,32 @@ impl RecordFamily {
     const CHECKPOINT_SHAPE: &'static str = "mirror.StoredCheckpoint.v2{store:String,checkpoint_sequence:u64,covered_end_sequence:u64,digest:String,artifact:Bytes}";
     const RETENTION_SHAPE: &'static str = "mirror.RetentionSetting.v2{scope:Option<String>,rule:KeepEverything|KeepLatestCheckpoints(u64)}";
     const POLICY_SHAPE: &'static str =
-        "mirror.StorePolicy.v2{store:String,addressing:Opaque|SemaVersionedLog}";
+        "mirror.StorePolicy.v2{store:String,addressing:Opaque|MemoryVersionedLog}";
 
-    pub fn versioning_policy() -> sema_engine::VersioningPolicy {
-        sema_engine::VersioningPolicy::new(sema_engine::VersionedStoreName::new(Self::STORE_NAME))
-            .with_recovery_topology(sema_engine::VersionedRecoveryTopology::Mirror)
+    pub fn versioning_policy() -> memory_engine::VersioningPolicy {
+        memory_engine::VersioningPolicy::new(memory_engine::VersionedStoreName::new(
+            Self::STORE_NAME,
+        ))
+        .with_recovery_topology(memory_engine::VersionedRecoveryTopology::Mirror)
     }
 
-    pub fn head_family() -> sema_engine::TableDescriptor<StoredHead> {
+    pub fn head_family() -> memory_engine::TableDescriptor<StoredHead> {
         Self::descriptor("store-heads", "Head", Self::HEAD_SHAPE)
     }
 
-    pub fn entry_family() -> sema_engine::TableDescriptor<ReceivedEntry> {
+    pub fn entry_family() -> memory_engine::TableDescriptor<ReceivedEntry> {
         Self::descriptor("received-entries", "Entry", Self::ENTRY_SHAPE)
     }
 
-    pub fn checkpoint_family() -> sema_engine::TableDescriptor<StoredCheckpoint> {
+    pub fn checkpoint_family() -> memory_engine::TableDescriptor<StoredCheckpoint> {
         Self::descriptor("checkpoint-artifacts", "Checkpoint", Self::CHECKPOINT_SHAPE)
     }
 
-    pub fn retention_family() -> sema_engine::TableDescriptor<RetentionSetting> {
+    pub fn retention_family() -> memory_engine::TableDescriptor<RetentionSetting> {
         Self::descriptor("retention-rules", "Retention", Self::RETENTION_SHAPE)
     }
 
-    pub fn policy_family() -> sema_engine::TableDescriptor<StorePolicy> {
+    pub fn policy_family() -> memory_engine::TableDescriptor<StorePolicy> {
         Self::descriptor("store-policies", "Policy", Self::POLICY_SHAPE)
     }
 
@@ -203,11 +205,11 @@ impl RecordFamily {
         table: &'static str,
         family: &'static str,
         shape: &'static str,
-    ) -> sema_engine::TableDescriptor<Record> {
-        sema_engine::TableDescriptor::new(
-            sema_engine::TableName::new(table),
-            sema_engine::FamilyName::new(family),
-            sema_engine::SchemaHash::for_label(shape),
+    ) -> memory_engine::TableDescriptor<Record> {
+        memory_engine::TableDescriptor::new(
+            memory_engine::TableName::new(table),
+            memory_engine::FamilyName::new(family),
+            memory_engine::SchemaHash::for_label(shape),
         )
     }
 }

@@ -1,5 +1,5 @@
 {
-  description = "mirror - Payload-blind append-ingest mirror daemon for sema version control.";
+  description = "mirror - Payload-blind append-ingest mirror daemon for memory version control.";
 
   inputs = {
     nixpkgs.url = "github:LiGoldragon/nixpkgs?ref=main";
@@ -132,7 +132,7 @@
               cargoTestExtraArgs = "--test landed_body_readback restore_returns_the_exact_landed_body_and_its_content_address -- --exact";
             }
           );
-          # A SemaVersionedLog store recomputes each body's content address at
+          # A MemoryVersionedLog store recomputes each body's content address at
           # append and REFUSES a digest-mismatched body before it lands
           # (landed_entries empty, head None), the faithful body lands and
           # re-hashes to the head, and an Opaque control lands the same tampered

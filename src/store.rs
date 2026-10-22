@@ -1,11 +1,11 @@
 //! Mirror's durable payload-blind ledger.
 //!
-//! Every mutating method returns only after sema-engine commits. The engine
+//! Every mutating method returns only after memory-engine commits. The engine
 //! therefore cannot emit an acknowledgement before durable state exists.
 
 use std::path::Path;
 
-use sema_engine::{
+use memory_engine::{
     Assertion, CommitRequest, Engine, EngineOpen, EngineRecord, KeyRange, Mutation, QueryPlan,
     RecordKey, Retraction, SchemaVersion, TableReference,
 };

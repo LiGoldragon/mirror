@@ -42,7 +42,7 @@ pub enum Error {
     EngineRequest(#[from] EngineRequestError),
 
     #[error("ledger storage: {0}")]
-    Ledger(#[from] sema_engine::Error),
+    Ledger(#[from] memory_engine::Error),
 
     #[error("payload encode for {surface}: {message}")]
     PayloadEncode {

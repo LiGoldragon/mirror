@@ -1,9 +1,9 @@
-//! `mirror` runtime — the payload-blind sema version-control remote.
+//! `mirror` runtime — the payload-blind memory version-control remote.
 //!
 //! One append-ingest mirror daemon serves every component store (Spirit
 //! 0yx5): it validates sequence continuity and expected head,
 //! deduplicates idempotently by entry digest, persists into its own
-//! versioned sema-engine store before acknowledging, and carries
+//! versioned memory-engine store before acknowledging, and carries
 //! registration and retention policy behind its owner-only meta signal.
 //!
 //! The working and owner Interfaces come directly from their Ethos

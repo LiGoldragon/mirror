@@ -1,9 +1,9 @@
-//! Component-side transport from a sema-engine outbox to Mirror.
+//! Component-side transport from a memory-engine outbox to Mirror.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use sema_engine::{
+use memory_engine::{
     Engine as ComponentEngine, MirrorHead, VersionedCommitLogEntry, VersionedStoreName,
 };
 use signal_frame_interface::{
@@ -244,8 +244,8 @@ impl ComponentShipper {
 
     fn mirror_head_from_mark(mark: &z2VcqM) -> Result<MirrorHead> {
         Ok(MirrorHead::new(
-            sema_engine::CommitSequence::new(*mark.field_0.payload()),
-            sema_engine::EntryDigest::new(parse_digest(mark.field_1.as_str())?),
+            memory_engine::CommitSequence::new(*mark.field_0.payload()),
+            memory_engine::EntryDigest::new(parse_digest(mark.field_1.as_str())?),
         ))
     }
 }

@@ -39,16 +39,16 @@ Mirror's build is an ordinary Cargo build. Its private ledger types live in
 Ethos input
     → load private ledger state
     → pure decision
-    → sema-engine commit
+    → memory-engine commit
     → Ethos output
 ```
 
 `Engine` performs this path directly. `decision.rs` owns the pure append,
-checkpoint, and object-notice decisions. `Store` owns sema-engine tables and
+checkpoint, and object-notice decisions. `Store` owns memory-engine tables and
 all durable mutation. The split keeps policy visible without interposing a
 generic plane runner.
 
-The private store is itself versioned as `mirror:sema`, with Mirror recovery
+The private store is itself versioned as `mirror:memory`, with Mirror recovery
 topology. Its record-family identities describe the ordinary Rust persistence
 shape. Schema version 2 deliberately separates this representation from the
 retired emitter-owned layout.
@@ -80,7 +80,7 @@ An append is accepted only when:
 - its expected head names a stored row immediately before the suffix;
 - every already-known sequence carries the same digest;
 - every sequence at or below the durable head has a stored row; and
-- for a `SemaVersionedLog` store, each body re-derives to its carried digest.
+- for a `MemoryVersionedLog` store, each body re-derives to its carried digest.
 
 Known rows, including rows ahead of the head after a crash window, are the
 deduplication authority. A complete duplicate below the head writes nothing. A

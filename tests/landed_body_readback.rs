@@ -14,33 +14,33 @@ struct WitnessRecord {
     body: String,
 }
 
-impl sema_engine::EngineRecord for WitnessRecord {
-    fn record_key(&self) -> sema_engine::RecordKey {
-        sema_engine::RecordKey::new(self.key.clone())
+impl memory_engine::EngineRecord for WitnessRecord {
+    fn record_key(&self) -> memory_engine::RecordKey {
+        memory_engine::RecordKey::new(self.key.clone())
     }
 }
 
-fn real_genesis_envelope(store_name: &str) -> (z2VPuU, sema_engine::EntryDigest) {
+fn real_genesis_envelope(store_name: &str) -> (z2VPuU, memory_engine::EntryDigest) {
     let directory = tempfile::tempdir().expect("source directory");
-    let mut engine = sema_engine::Engine::open(
-        sema_engine::EngineOpen::new(
-            directory.path().join("source.sema"),
-            sema_engine::SchemaVersion::new(1),
+    let mut engine = memory_engine::Engine::open(
+        memory_engine::EngineOpen::new(
+            directory.path().join("source.memory"),
+            memory_engine::SchemaVersion::new(1),
         )
-        .with_versioning(sema_engine::VersioningPolicy::new(
-            sema_engine::VersionedStoreName::new(store_name),
+        .with_versioning(memory_engine::VersioningPolicy::new(
+            memory_engine::VersionedStoreName::new(store_name),
         )),
     )
     .expect("source opens");
     let table = engine
-        .register_table(sema_engine::TableDescriptor::<WitnessRecord>::new(
-            sema_engine::TableName::new("records"),
-            sema_engine::FamilyName::new("record"),
-            sema_engine::SchemaHash::for_label("witness-record-v1"),
+        .register_table(memory_engine::TableDescriptor::<WitnessRecord>::new(
+            memory_engine::TableName::new("records"),
+            memory_engine::FamilyName::new("record"),
+            memory_engine::SchemaHash::for_label("witness-record-v1"),
         ))
         .expect("table");
     engine
-        .assert(sema_engine::Assertion::new(
+        .assert(memory_engine::Assertion::new(
             table,
             WitnessRecord {
                 key: "witness-1".to_owned(),
@@ -77,7 +77,7 @@ async fn restore_returns_the_exact_landed_body_and_its_content_address() {
     let (envelope, real_head) = real_genesis_envelope("spirit");
     let shipped_body = envelope.field_3.octets().expect("octets");
     let directory = tempfile::tempdir().expect("mirror directory");
-    let mut engine = Engine::new(Store::open(&directory.path().join("mirror.sema")).unwrap());
+    let mut engine = Engine::new(Store::open(&directory.path().join("mirror.memory")).unwrap());
     register(&mut engine, "spirit", meta_signal_mirror::z2VMYP::z2Vf8Y);
     assert!(matches!(
         engine.handle(append("spirit", None, vec![envelope])).await,

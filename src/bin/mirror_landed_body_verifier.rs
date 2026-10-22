@@ -4,7 +4,7 @@
 //! gate; node-b's mirror lands it. This bin runs ON node-b, reads that landed
 //! body back OUT of the running mirror daemon over its own working contract
 //! (`Restore`, after a zero-coverage checkpoint the testScript published),
-//! re-derives the body's content address through sema-engine's OWN
+//! re-derives the body's content address through memory-engine's OWN
 //! content-addressing (`mirror::LandedBody::content_address`), and asserts the
 //! re-derived 32 digest BYTES equal the real spirit head the witness forwarded.
 //!
@@ -40,7 +40,7 @@ struct LandedBodyVerifier {
 struct Verdict {
     store_label: String,
     octets: usize,
-    rederived: sema_engine::EntryDigest,
+    rederived: memory_engine::EntryDigest,
     carried_hex: String,
     expected_hex: String,
 }

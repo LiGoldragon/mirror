@@ -181,7 +181,7 @@ impl RegisteredLedger {
     fn body_addressing_violation(&self, entries: &[signal_mirror::z2VPuU]) -> Option<z2VcyE> {
         match self.addressing() {
             ContentAddressing::Opaque => None,
-            ContentAddressing::SemaVersionedLog => entries
+            ContentAddressing::MemoryVersionedLog => entries
                 .iter()
                 .find(|entry| {
                     entry.field_3.octets().map_or(true, |octets| {

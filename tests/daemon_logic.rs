@@ -307,7 +307,7 @@ async fn restore_without_checkpoint_is_typed() {
 #[test]
 fn mirror_dogfoods_a_versioned_store() {
     let harness = Harness::registered("spirit");
-    assert_eq!(RecordFamily::STORE_NAME, "mirror:sema");
+    assert_eq!(RecordFamily::STORE_NAME, "mirror:memory");
     assert!(
         !harness
             .engine

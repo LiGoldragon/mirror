@@ -5,7 +5,7 @@ edition      = "2024"
 rust-version = "1.89"
 license      = "MIT OR Apache-2.0"
 repository   = "https://github.com/LiGoldragon/mirror"
-description  = "Payload-blind append-ingest mirror daemon: the sema version-control remote."
+description  = "Payload-blind append-ingest mirror daemon: the memory version-control remote."
 
 [lib]
 name = "mirror"
@@ -48,16 +48,16 @@ dotos-text = ["dep:dotos", "signal-mirror/dotos-text", "meta-signal-mirror/dotos
 witness = ["dotos-text"]
 
 [dependencies]
-meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", rev = "c14fc141ea46652eb1bfbcd6138d08578864e6c5", default-features = false }
+meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", rev = "d91f8e1f9b7e7d51baed793da1508dc54dcd02de", default-features = false }
 dotos               = { git = "https://github.com/LiGoldragon/dotos.git", rev = "80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3", optional = true }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
-sema-engine        = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "7158e5503f37fd2fbca1d707f134e38a3fda1176" }
+memory-engine        = { git = "https://github.com/LiGoldragon/memory-engine.git", rev = "abf9d85166e22440440baba03358913458905b8d" }
 signal-mirror      = { git = "https://github.com/LiGoldragon/signal-mirror.git", rev = "d57830076840f0e1ef89352823d7b0356a7c96df", default-features = false }
 signal-standard    = { git = "https://github.com/LiGoldragon/signal-standard.git", rev = "d5a4a545e61dafec30667f2af38ca503ab6d6d3f", default-features = false }
 signal-frame-interface = { package = "signal-frame", git = "https://github.com/LiGoldragon/signal-frame.git", rev = "01676293a623d97b65e320d4138c4b480c6d5dad" }
 thiserror          = "2"
 tokio              = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
-triad-runtime      = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "7d10bb9d9a08ce363a0be8cff2716103f0a326fe" }
+triad-runtime      = { git = "https://github.com/LiGoldragon/triad-runtime.git", rev = "4cc0a100841d2400f354c008c9faa73b2cedf50e" }
 
 [dev-dependencies]
 tempfile = "3"

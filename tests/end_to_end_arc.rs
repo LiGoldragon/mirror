@@ -1,17 +1,17 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use mirror::{
-    ComponentShipper, Engine, MirrorTailnetClient, PublishLatestCheckpoint, Service, ServiceLink,
-    ShipOutcome, ShipUnshipped, Store,
-};
-use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
-use sema_engine::{
+use memory_engine::{
     Assertion, Durability, Engine as ComponentEngine, EngineOpen, EngineRecord, FamilyDirectory,
     FamilyName, Mutation, PortableCheckpoint, QueryPlan, RecordKey, Retraction, RowMaterializer,
     SchemaHash, SchemaVersion, TableDescriptor, TableName, TableReference, VersionedCommitLogEntry,
     VersionedRecoveryTopology, VersionedStoreName, VersioningPolicy,
 };
+use mirror::{
+    ComponentShipper, Engine, MirrorTailnetClient, PublishLatestCheckpoint, Service, ServiceLink,
+    ShipOutcome, ShipUnshipped, Store,
+};
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use signal_mirror::{z2VTq5, z2VTqL, z2VVny, z2VbvA, z2Ve8p};
 use triad_runtime::PeerIdentity;
 use triad_runtime::kameo::actor::Spawn;
@@ -53,10 +53,10 @@ impl Families {
 }
 
 impl FamilyDirectory for Families {
-    fn materialize(&self, row: RowMaterializer<'_>) -> sema_engine::Result<()> {
+    fn materialize(&self, row: RowMaterializer<'_>) -> memory_engine::Result<()> {
         match row.family().family().as_str() {
             "thought" => row.apply(self.thoughts),
-            other => Err(sema_engine::Error::FamilyUnknown {
+            other => Err(memory_engine::Error::FamilyUnknown {
                 family: other.to_owned(),
             }),
         }
@@ -123,7 +123,7 @@ impl ComponentFixture {
     }
 
     fn path(&self, name: &str) -> PathBuf {
-        self.directory.path().join(format!("{name}.sema"))
+        self.directory.path().join(format!("{name}.memory"))
     }
 
     fn open_fresh(&self, file: &str) -> ComponentEngine {
@@ -173,7 +173,7 @@ impl ComponentFixture {
 }
 
 async fn running_mirror(directory: &tempfile::TempDir) -> (ServiceLink, SocketAddr) {
-    let store = Store::open(&directory.path().join("mirror.sema")).expect("mirror store");
+    let store = Store::open(&directory.path().join("mirror.memory")).expect("mirror store");
     let service = Service::spawn(Service::new(
         Engine::new(store),
         "127.0.0.1:0".parse().unwrap(),
@@ -229,7 +229,7 @@ async fn component_history_ships_over_tcp_and_restores_identically() {
 
     let entries = shipper
         .engine()
-        .versioned_replay_from_sequence(sema_engine::CommitSequence::new(1))
+        .versioned_replay_from_sequence(memory_engine::CommitSequence::new(1))
         .unwrap()
         .iter()
         .map(|entry| shipper.envelope_for_entry(entry).unwrap())

@@ -10,13 +10,13 @@ and does not establish active status.
 
 Read this repo's `ARCHITECTURE.md` before editing.
 
-`mirror` is the daemon of the mirror triad — the payload-blind sema
+`mirror` is the daemon of the mirror triad — the payload-blind memory
 version-control remote (Spirit `0yx5`).
 
 Load-bearing rules for this repo:
 
 - The mirror is payload-blind: never decode component payload or artifact
-  bytes except when a store explicitly selects `SemaVersionedLog` addressing.
+  bytes except when a store explicitly selects `MemoryVersionedLog` addressing.
 - The append decision (expected head, idempotent dedup, gap/fork) stays a pure,
   visible decision in `src/decision.rs`; do not move it into hidden store logic.
 - The reply is sent only after the persisting redb transaction committed

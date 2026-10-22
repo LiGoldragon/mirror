@@ -13,9 +13,9 @@ struct WitnessRecord {
     body: String,
 }
 
-impl sema_engine::EngineRecord for WitnessRecord {
-    fn record_key(&self) -> sema_engine::RecordKey {
-        sema_engine::RecordKey::new(self.key.clone())
+impl memory_engine::EngineRecord for WitnessRecord {
+    fn record_key(&self) -> memory_engine::RecordKey {
+        memory_engine::RecordKey::new(self.key.clone())
     }
 }
 
@@ -27,27 +27,27 @@ fn real_genesis_envelope(
     store_name: &str,
     key: &str,
     body: &str,
-) -> (z2VPuU, sema_engine::EntryDigest) {
+) -> (z2VPuU, memory_engine::EntryDigest) {
     let directory = tempfile::tempdir().expect("source store directory");
-    let mut engine = sema_engine::Engine::open(
-        sema_engine::EngineOpen::new(
-            directory.path().join("source.sema"),
-            sema_engine::SchemaVersion::new(1),
+    let mut engine = memory_engine::Engine::open(
+        memory_engine::EngineOpen::new(
+            directory.path().join("source.memory"),
+            memory_engine::SchemaVersion::new(1),
         )
-        .with_versioning(sema_engine::VersioningPolicy::new(
-            sema_engine::VersionedStoreName::new(store_name),
+        .with_versioning(memory_engine::VersioningPolicy::new(
+            memory_engine::VersionedStoreName::new(store_name),
         )),
     )
     .expect("source component engine opens");
-    let records: sema_engine::TableReference<WitnessRecord> = engine
-        .register_table(sema_engine::TableDescriptor::new(
-            sema_engine::TableName::new("records"),
-            sema_engine::FamilyName::new("record"),
-            sema_engine::SchemaHash::for_label("witness-record-v1"),
+    let records: memory_engine::TableReference<WitnessRecord> = engine
+        .register_table(memory_engine::TableDescriptor::new(
+            memory_engine::TableName::new("records"),
+            memory_engine::FamilyName::new("record"),
+            memory_engine::SchemaHash::for_label("witness-record-v1"),
         ))
         .expect("record family registers");
     engine
-        .assert(sema_engine::Assertion::new(
+        .assert(memory_engine::Assertion::new(
             records,
             WitnessRecord {
                 key: key.to_owned(),
@@ -78,7 +78,7 @@ fn real_genesis_envelope(
 async fn addressing_policy_refuses_tampering_without_weakening_opaque_stores() {
     let directory = tempfile::tempdir().expect("mirror store directory");
     let mut engine = Engine::new(
-        Store::open(&directory.path().join("mirror.sema")).expect("mirror store opens"),
+        Store::open(&directory.path().join("mirror.memory")).expect("mirror store opens"),
     );
     register(&mut engine, "spirit", meta_signal_mirror::z2VMYP::z2VbgN);
     register(&mut engine, "control", meta_signal_mirror::z2VMYP::z2Vf8Y);
