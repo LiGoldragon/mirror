@@ -51,7 +51,7 @@ witness = ["dotos-text"]
 meta-signal-mirror = { git = "https://github.com/LiGoldragon/meta-signal-mirror.git", rev = "c14fc141ea46652eb1bfbcd6138d08578864e6c5", default-features = false }
 dotos               = { git = "https://github.com/LiGoldragon/dotos.git", rev = "80c7b17f7ad3cf547d2624c6a243e5de5f85c9f3", optional = true }
 rkyv               = { version = "0.8", default-features = false, features = ["std", "bytecheck", "little_endian", "pointer_width_32", "unaligned"] }
-sema-engine        = { git = "https://github.com/LiGoldragon/sema-engine.git", rev = "7158e5503f37fd2fbca1d707f134e38a3fda1176" }
+sema-engine        = { git = "https://github.com/LiGoldragon/memory-engine.git", rev = "abb1c6b59108c7f9f03a6d1edeb663ac4b5a2cac" }
 signal-mirror      = { git = "https://github.com/LiGoldragon/signal-mirror.git", rev = "d57830076840f0e1ef89352823d7b0356a7c96df", default-features = false }
 signal-standard    = { git = "https://github.com/LiGoldragon/signal-standard.git", rev = "d5a4a545e61dafec30667f2af38ca503ab6d6d3f", default-features = false }
 signal-frame-interface = { package = "signal-frame", git = "https://github.com/LiGoldragon/signal-frame.git", rev = "01676293a623d97b65e320d4138c4b480c6d5dad" }
